@@ -65,6 +65,21 @@ for result in results:
 
 print(pre_processed_results[:5])
 
+
+
+#current tasks
+#add "YOU" priority to the dialog
+#tokenize the dialog
+#train the model
+
+
+
+
+
+
+
+
+
 # print(results[0])
 # print(dialogs)
 # with open("data.txt", "w") as f:
