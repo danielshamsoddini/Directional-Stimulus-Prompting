@@ -6,9 +6,8 @@ from transformers import TrainingArguments, Trainer
 import evaluate
 import numpy as np
 
-
-# tokenizer = AutoTokenizer.from_pretrained("google-t5/t5-base")
-# model = AutoModelForCausalLM.from_pretrained("google-t5/t5-base")
+tokenizer = AutoTokenizer.from_pretrained("distilbert/distilgpt2")
+model = AutoModelForCausalLM.from_pretrained("distilbert/distilgpt2")
 
 df = pd.read_parquet("hf://datasets/kchawla123/casino/data/train-00000-of-00001.parquet")
 # print(df.head())
@@ -20,7 +19,7 @@ df = pd.read_parquet("hf://datasets/kchawla123/casino/data/train-00000-of-00001.
 #     predictions = np.argmax(logits, axis=-1)
 #     return metric.compute(predictions=predictions, references=labels)
 
-CONTEXT_SIZE = 5
+CONTEXT_SIZE = 4
 other_id = {"mturk_agent_1":"mturk_agent_2", "mturk_agent_2":"mturk_agent_1"}
 dialogs = []
 results = []
@@ -42,20 +41,36 @@ for _,a in df.iterrows():
     result = []
     arr = dialog
     for i in range(len(arr)):
-        if i < CONTEXT_SIZE:
-            result.append(arr[:i])
-        else:
-            result.append(arr[i-CONTEXT_SIZE:i])
+        start_index = max(0, i - CONTEXT_SIZE)
+        values = arr[start_index:i+1]
+        result.append(values)
     
-    results.append(result)
+    results += result
     dialogs.append(dialog)
 
-print(dialogs[0])   
+# print(dialogs[0])   
+you_vs_them = {"mturk_agent_1":"YOU", "mturk_agent_2":"THEM"}
+them_vs_you = {"mturk_agent_1":"THEM", "mturk_agent_2":"YOU"}
+pre_processed_results = []
+for result in results:
+    base_str = ""
+    base_str_inverted = ""
+    # print(result)
+    for r in result:
+        k = list(r.keys())[0]
+        v = r[k]
+        base_str += f"{you_vs_them[k]}: {v} "
+        base_str_inverted += f"{them_vs_you[k]}: {v} "
+    pre_processed_results.append(base_str)
+
+print(pre_processed_results[:5])
+
 # print(results[0])
 # print(dialogs)
 # with open("data.txt", "w") as f:
 #     f.write(str(dialogs[0]))
-
+print(tokenizer.chat_template)
+print(tokenizer.eos_token)
 trainer = Trainer(
     model=model,
     args=training_args,
