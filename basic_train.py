@@ -7,8 +7,8 @@ import evaluate
 import numpy as np
 
 
-tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
-model = AutoModelForCausalLM.from_pretrained("openai-community/gpt2")
+tokenizer = AutoTokenizer.from_pretrained("google-t5/t5-base")
+model = AutoModelForCausalLM.from_pretrained("google-t5/t5-base")
 
 df = pd.read_parquet("hf://datasets/kchawla123/casino/data/train-00000-of-00001.parquet")
 # print(df.head())
@@ -20,9 +20,21 @@ def compute_metrics(eval_pred):
     predictions = np.argmax(logits, axis=-1)
     return metric.compute(predictions=predictions, references=labels)
 
-print(df["chat_logs"][:][:]['text'])
-small_train_dataset = tokenizer(df['chat_logs']['text'])[:900]
-small_eval_dataset = tokenizer(df['chat_logs']['text'])[900:]
+
+dialogs = []
+for _,a in df.iterrows():
+    dialog = []
+    priorities = [a['participant_info']['mturk_agent_1']["value2issue"], a['participant_info']['mturk_agent_2']["value2issue"]]
+    dialog.append(priorities)
+    for b in a['chat_logs']:
+        # print(b)
+        dialog.append({b['id']:b["text"]})
+    dialogs.append(dialog)
+
+print(dialogs[0])   
+# print(dialogs)
+# with open("data.txt", "w") as f:
+#     f.write(str(dialogs[0]))
 
 trainer = Trainer(
     model=model,
