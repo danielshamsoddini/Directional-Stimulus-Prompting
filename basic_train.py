@@ -24,10 +24,9 @@ df = pd.read_parquet("hf://datasets/kchawla123/casino/data/train-00000-of-00001.
 CONTEXT_SIZE = 4
 other_id = {"mturk_agent_1":"mturk_agent_2", "mturk_agent_2":"mturk_agent_1"}
 dialogs = []
-results = []
 for _,a in df.iterrows():
     dialog = []
-    priorities = [a['participant_info']['mturk_agent_1']["value2issue"], a['participant_info']['mturk_agent_2']["value2issue"]]
+    priorities = [{'mturk_agent_1':a['participant_info']['mturk_agent_1']["value2issue"], 'mturk_agent_2':a['participant_info']['mturk_agent_2']["value2issue"]}]
     final_offer = {}
     for b in a['chat_logs']:
         # print(b)
@@ -40,39 +39,64 @@ for _,a in df.iterrows():
             dialog.append({b['id']:line_text})
         else:
             dialog.append({b['id']:b["text"]})
-    result = []
-    arr = dialog
-    for i in range(len(arr)):
-        start_index = max(0, i - CONTEXT_SIZE)
-        values = arr[start_index:i+1]
-        result.append(values)
+    # result = []
+    # arr = dialog
+    # for i in range(len(arr)):
+    #     start_index = max(0, i - CONTEXT_SIZE)
+    #     values = arr[start_index:i+1]
+    #     result.append(values)
     
-    results += result
-    dialogs.append(dialog)
+    # results += result
+    dialogs.append([priorities,dialog])
 
 # print(dialogs[0])   
-you_vs_them = {"mturk_agent_1":"YOU", "mturk_agent_2":"THEM"}
-them_vs_you = {"mturk_agent_1":"THEM", "mturk_agent_2":"YOU"}
-pre_processed_results = []
-for result in results:
-    base_str = ""
-    base_str_inverted = ""
-    # print(result)
-    for r in result:
-        k = list(r.keys())[0]
-        v = r[k]
-        base_str += f"{you_vs_them[k]}: {v} "
-        base_str_inverted += f"{them_vs_you[k]}: {v} "
-    pre_processed_results.append(base_str)
+# you_vs_them = {"mturk_agent_1":"YOU", "mturk_agent_2":"THEM"}
+# them_vs_you = {"mturk_agent_1":"THEM", "mturk_agent_2":"YOU"}
+# pre_processed_results = []
+# # for result in results:
+# #     base_str = ""
+# #     base_str_inverted = ""
+# #     # print(result)
+# #     for r in result:
+# #         k = list(r.keys())[0]
+# #         v = r[k]
+# #         base_str += f"{you_vs_them[k]}: {v} "
+# #         base_str_inverted += f"{them_vs_you[k]}: {v} "
+# #     pre_processed_results.append(base_str)
 
-print(pre_processed_results[:5])
+results = []
+for result in dialogs:
+    prio, dialog = result
+    print(prio)
+    print(dialog)
+    dialog_lines = []
+    for num,line in enumerate(dialog):
+        you_vs_them = {}
+        example = {}
+        k,v = list(line.items())[0]
+        you_vs_them[k] = "YOU:"
+        you_vs_them[other_id[k]] = "THEM:"
+        base_str = ""
+        prev = max(0, num - CONTEXT_SIZE)
+        context = dialog[prev:num]
+        for c in context:
+            k2,v2 = list(c.items())[0]
+            base_str += f"{you_vs_them[k2]} {v2} "
+        
+        base_str += f"{you_vs_them[k]} "
+        example["context"] = base_str
+        example["response"] = v
+        dialog_lines.append(example)
+    results.append(dialog_lines)
+    
+# print(pre_processed_results[:5])
 
-
+# print(dialogs[0])
 print(tokenizer.chat_template)
 print(tokenizer.eos_token)
 
 #current tasks
-#Either fit to DialoGPT or T5(current line is response, previous lines are context)
+#Either fit to DialoGPT or T5(current line is response, previous lines are context + priority)
 #tokenize the dialog
 #train the model
 
