@@ -6,6 +6,7 @@ from transformers import TrainingArguments, Trainer
 import evaluate
 import numpy as np
 import datasets
+from transformers import DataCollatorForSeq2Seq
 
 tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-small")
 model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
@@ -101,10 +102,20 @@ new_df = pd.DataFrame(results)
 loaded_dataset = datasets.Dataset.from_pandas(new_df).train_test_split(test_size=0.2)
 print(loaded_dataset)
 
+print(len(model.config.task_specific_params))
 
-
+def preprocess_function(examples):
+    inputs = ["Continue writing the following text.\n\n" + example["conversation"] for example in examples]
+    model_inputs = tokenizer(inputs, max_length=1024, truncation=True)
+    labels = tokenizer(text_target=examples["response"], max_length=1024, truncation=True)
+    model_inputs["labels"] = labels["input_ids"]
+    return model_inputs
 # print(dialogs[0])
 
+tokenized_convos = loaded_dataset.map(preprocess_function, batched=True)
+
+
+data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=checkpoint)
 
 #current tasks
 #Either fit to DialoGPT or T5(current line is response, previous lines are context + priority)
