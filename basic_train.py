@@ -5,6 +5,7 @@ import pandas as pd
 from transformers import TrainingArguments, Trainer
 import evaluate
 import numpy as np
+import datasets
 
 tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-small")
 model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
@@ -35,8 +36,13 @@ for _,a in df.iterrows():
             # print(b)
             # final_offer[b['id']] = b['task_data']['issue2youget']
             # final_offer[other_id[b['id']]] = b['task_data']['issue2theyget']
-            line_text =f"{b["text"]} {b['task_data']['issue2youget']['Firewood']} Firewood {b['task_data']['issue2youget']['Water']} Water {b['task_data']['issue2youget']['Food']} Food"
-            dialog.append({b['id']:line_text})
+            line_text =f"{b['task_data']['issue2youget']['Firewood']} Firewood {b['task_data']['issue2youget']['Water']} Water {b['task_data']['issue2youget']['Food']} Food"
+            final_offer[b['id']] = line_text
+            final_offer[other_id[b['id']]] = f"{b['task_data']['issue2theyget']['Firewood']} Firewood {b['task_data']['issue2theyget']['Water']} Water {b['task_data']['issue2theyget']['Food']} Food"
+            last_submission = {b['id']:f"{b['text']} {line_text}"}
+        elif b['text'] == "Accept-Deal":
+            dialog.append(last_submission)
+            dialog.append({b['id']:f"{b['text']} {final_offer[b['id']]}"})
         else:
             dialog.append({b['id']:b["text"]})
     # result = []
@@ -67,9 +73,8 @@ for _,a in df.iterrows():
 results = []
 for result in dialogs:
     prio, dialog = result
-    print(prio)
-    print(dialog)
-    dialog_lines = []
+    # print(prio)
+    # print(dialog)
     for num,line in enumerate(dialog):
         you_vs_them = {}
         example = {}
@@ -84,16 +89,22 @@ for result in dialogs:
             base_str += f"{you_vs_them[k2]} {v2} "
         
         base_str += f"{you_vs_them[k]} "
-        example["context"] = base_str
+        example["conversation"] = base_str
         example["response"] = v
-        dialog_lines.append(example)
-    results.append(dialog_lines)
+        results.append(example)
+    # results.append(dialog_lines)
     
 # print(pre_processed_results[:5])
+print(len(results))
+new_df = pd.DataFrame(results)
+print(new_df.head())
+loaded_dataset = datasets.Dataset.from_pandas(new_df)
+
+
+
 
 # print(dialogs[0])
-print(tokenizer.chat_template)
-print(tokenizer.eos_token)
+
 
 #current tasks
 #Either fit to DialoGPT or T5(current line is response, previous lines are context + priority)
