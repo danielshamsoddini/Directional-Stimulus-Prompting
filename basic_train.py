@@ -27,7 +27,7 @@ other_id = {"mturk_agent_1":"mturk_agent_2", "mturk_agent_2":"mturk_agent_1"}
 dialogs = []
 for _,a in df.iterrows():
     dialog = []
-    priorities = [{'mturk_agent_1':a['participant_info']['mturk_agent_1']["value2issue"], 'mturk_agent_2':a['participant_info']['mturk_agent_2']["value2issue"]}]
+    priorities = {'mturk_agent_1':a['participant_info']['mturk_agent_1']["value2issue"], 'mturk_agent_2':a['participant_info']['mturk_agent_2']["value2issue"]}
     final_offer = {}
     for b in a['chat_logs']:
         # print(b)
@@ -81,7 +81,7 @@ for result in dialogs:
         k,v = list(line.items())[0]
         you_vs_them[k] = "YOU:"
         you_vs_them[other_id[k]] = "THEM:"
-        base_str = ""
+        base_str = f"Priorities: Low {prio[k]['Low']} Medium {prio[k]['Medium']} High {prio[k]['High']}  "
         prev = max(0, num - CONTEXT_SIZE)
         context = dialog[prev:num]
         for c in context:
@@ -97,9 +97,9 @@ for result in dialogs:
 # print(pre_processed_results[:5])
 print(len(results))
 new_df = pd.DataFrame(results)
-print(new_df.head())
-loaded_dataset = datasets.Dataset.from_pandas(new_df)
-
+# print(new_df.head())
+loaded_dataset = datasets.Dataset.from_pandas(new_df).train_test_split(test_size=0.2)
+print(loaded_dataset)
 
 
 
