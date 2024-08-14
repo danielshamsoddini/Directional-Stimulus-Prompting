@@ -1,13 +1,15 @@
 # Load model directly
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM
 # import datasets
 import pandas as pd
 from transformers import TrainingArguments, Trainer
 import evaluate
 import numpy as np
 
-tokenizer = AutoTokenizer.from_pretrained("distilbert/distilgpt2")
-model = AutoModelForCausalLM.from_pretrained("distilbert/distilgpt2")
+tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-small")
+model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
+# tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-medium")
+# model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium")
 
 df = pd.read_parquet("hf://datasets/kchawla123/casino/data/train-00000-of-00001.parquet")
 # print(df.head())
@@ -66,9 +68,11 @@ for result in results:
 print(pre_processed_results[:5])
 
 
+print(tokenizer.chat_template)
+print(tokenizer.eos_token)
 
 #current tasks
-#add "YOU" priority to the dialog
+#Either fit to DialoGPT or T5(current line is response, previous lines are context)
 #tokenize the dialog
 #train the model
 
