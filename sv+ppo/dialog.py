@@ -16,18 +16,26 @@ generation_params = {
     "num_return_sequences": 1,
     "repetition_penalty": 1.3,
 }
+debug = False
 class SupervisedAgent:
     def __init__(self, id, model_dir):
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_dir,local_files_only=True)
         self.tokenizer = AutoTokenizer.from_pretrained(model_dir,local_files_only=True)
-        self.priorities = "Priorities: Low Firewood Medium Water High Food "
+        self.priorities = "Priorities: Low Firewood Medium Water High Food  "
+        self.priorities_quant = [0,1,2]
         self.id = id
 
     def respond(self, text):
-        print(text)
+        if debug:
+            print(text)
         inputs = self.tokenizer(["Continue writing the following text.\n\n"+ self.priorities + text], return_tensors="pt")
         reply_ids = self.model.generate(**inputs, **generation_params)
         return self.tokenizer.decode(reply_ids[0], skip_special_tokens=True)
+    
+    def setPriorities(self, priorities):
+        low_2_high = {"Low":0, "Medium":1, "High":2}
+        self.priorities = f"Priorities: {priorities[0]} Firewood {priorities[1]} Water {priorities[2]} Food  "
+        self.priorities_quant = [low_2_high[priorities[0]], low_2_high[priorities[1]], low_2_high[priorities[2]]]
     
 class Dialog:
     def __init__(self, agents):
@@ -36,8 +44,10 @@ class Dialog:
         self.num_rounds = 10
 
     def selfplay(self):
+        # print(self.agents[0].model.parameters())
         random.shuffle(self.agents)
         flag = False
+        return_val = None   
         for a in range(self.num_rounds):
             for agent in self.agents:
                 prev_convo = self.dialog_history[-4:]
@@ -52,11 +62,19 @@ class Dialog:
                 self.dialog_history.append({agent.id:agent.respond(convo_str)})
                 if "Accept-Deal" in list(self.dialog_history[-1].values())[0]:
                     flag = True
+                    return_val = self.dialog_history
+                    break
+                if "Walk-Away" in list(self.dialog_history[-1].values())[0]:
+                    flag = True
+                    return_val = "Walk-Away"
                     break
             if flag:
                 break
         
-        self.print_dialog()
+        if debug:
+            self.print_dialog()
+        
+        return return_val
     
     def print_dialog(self):
         for line in self.dialog_history:
