@@ -28,9 +28,18 @@ def get_reward(dialog, agent):
             return None
         else:
             print("VALID OFFER")
-
+            final_score = 0
+            for a in range(len(agent_offer)):
+                final_score += 2**agent.priorities_quant[a] * int(agent_offer[a])
+            return final_score
     else:
         print("Walk-Away")
+        final_score = 0
+        for a in range(len(agent.priorities_quant)):
+            final_score += 2**agent.priorities_quant[a] * 3
+        return final_score
+        
+
 
 
 def PPO_loop():
@@ -40,32 +49,33 @@ def PPO_loop():
     agents = [reinforce_agent, partner_agent]
     optimizer = torch.optim.Adam(reinforce_agent.model.parameters(), lr=5e-5)
     # Load the dialog
-    priority_product = list(itertools.product(possible_priorities, repeat=2))
 
     for epoch in range(num_epochs):
-        for prio, partner_prio in priority_product:
+        epoch_reward = 0
+        for prio in possible_priorities:
+            for partner_prio in possible_priorities:
 
-            reinforce_agent.setPriorities(prio)
-            partner_agent.setPriorities(partner_prio)
-            dialog = Dialog(agents)
+                reinforce_agent.setPriorities(prio)
+                partner_agent.setPriorities(partner_prio)
+                dialog = Dialog(agents)
 
-            # Train the dialog
-            selfplay_result = dialog.selfplay()
+                # Train the dialog
+                selfplay_result = dialog.selfplay()
 
-            # Get the reward
-            if selfplay_result:
-                reward = get_reward(selfplay_result, reinforce_agent)
-
-                # Train the model
-                # optimizer.zero_grad()
-                # loss = -reward
-                # loss.backward()
-                # optimizer.step()
-                # print(loss)
-                # print(prio,partner_prio)
+                # Get the reward
+                if selfplay_result:
+                    reward = get_reward(selfplay_result, reinforce_agent)
+                    epoch_reward+=reward
+                    # Train the model
+                    optimizer.zero_grad()
+                    loss = -reward
+                    loss.backward()
+                    optimizer.step()
+                    print(loss)
+                    print(prio,partner_prio)
 
         print(epoch)
-
+        print(epoch_reward/float(len(possible_priorities)**2))
 
 
 PPO_loop()
