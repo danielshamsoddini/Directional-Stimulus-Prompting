@@ -17,7 +17,7 @@ generation_params = {
     "repetition_penalty": 1.3,
 }
 debug = False
-class SupervisedAgent:
+class FlanAgent:
     def __init__(self, id, model_dir):
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_dir,local_files_only=True)
         self.tokenizer = AutoTokenizer.from_pretrained(model_dir,local_files_only=True)
@@ -80,6 +80,6 @@ class Dialog:
         for line in self.dialog_history:
             print(line)
 
-Dialog([SupervisedAgent("agent1","flan_t5-small-casino/checkpoint-14120"), SupervisedAgent("agent2","flan_t5-small-casino/checkpoint-14120")]).selfplay()
+Dialog([FlanAgent("agent1","flan_t5-small-casino/checkpoint-14120"), FlanAgent("agent2","flan_t5-small-casino/checkpoint-14120")]).selfplay()
 
         
