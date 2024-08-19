@@ -5,10 +5,11 @@ import numpy as np
 # import gymnasium as gym
 import itertools
 import logging
+import copy
 
 # optimizer = torch.optim.Adam(model.parameters(), lr=5e-5)
 num_epochs = 100
-possible_priorities = itertools.permutations(["Low", "Medium", "High"])
+possible_priorities = list(itertools.permutations(["Low", "Medium", "High"]))
 def get_reward(dialog, agent):
     if dialog != "Walk-Away":
         final_offers = dialog[-2:]
@@ -27,6 +28,7 @@ def get_reward(dialog, agent):
             return None
         else:
             print("VALID OFFER")
+
     else:
         print("Walk-Away")
 
@@ -38,19 +40,20 @@ def PPO_loop():
     agents = [reinforce_agent, partner_agent]
     optimizer = torch.optim.Adam(reinforce_agent.model.parameters(), lr=5e-5)
     # Load the dialog
+    priority_product = list(itertools.product(possible_priorities, repeat=2))
 
     for epoch in range(num_epochs):
-        for prio in possible_priorities:
-            for partner_prio in possible_priorities:
+        for prio, partner_prio in priority_product:
 
-                reinforce_agent.setPriorities(prio)
-                partner_agent.setPriorities(partner_prio)
-                dialog = Dialog(agents)
+            reinforce_agent.setPriorities(prio)
+            partner_agent.setPriorities(partner_prio)
+            dialog = Dialog(agents)
 
-                # Train the dialog
-                selfplay_result = dialog.selfplay()
+            # Train the dialog
+            selfplay_result = dialog.selfplay()
 
-                # Get the reward
+            # Get the reward
+            if selfplay_result:
                 reward = get_reward(selfplay_result, reinforce_agent)
 
                 # Train the model
@@ -59,7 +62,9 @@ def PPO_loop():
                 # loss.backward()
                 # optimizer.step()
                 # print(loss)
-        logging.info(f"Epoch {epoch+1} completed")
+                # print(prio,partner_prio)
+
+        print(epoch)
 
 
 
