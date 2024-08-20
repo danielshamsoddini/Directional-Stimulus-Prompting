@@ -45,7 +45,7 @@ class FlanAgent:
         # print(enum_var)
         # exit()
         for i, logits in enumerate(outputs['scores']):
-            logits = torch.clamp(logits, -1000, 1000)  # Clamp logits to prevent overflow
+            logits = torch.clamp(logits, -100, 100)  # Clamp logits to prevent overflow
             probs = log_softmax(logits, dim=-1)  # Get log-softmax over logits
             token_id = outputs['sequences'][0, i]  # Get token id
             log_probs.append(probs[0, token_id].item())  # Get log-prob of generated token
@@ -92,9 +92,9 @@ class Dialog:
             if flag:
                 break
         
-        if True:
+        if debug:
             self.print_dialog()
-            exit()
+            # exit()
         
         return return_val
     

@@ -45,6 +45,7 @@ def reinforce_loop():
 
     for epoch in range(num_epochs):
         epoch_reward = 0
+        avg_loss = 0
         for prio in possible_priorities:
             for partner_prio in possible_priorities:
                 reinforce_agent.setPriorities(prio)
@@ -65,14 +66,17 @@ def reinforce_loop():
                     # Train the model
                     log_probs = torch.tensor(reinforce_agent.log_probs, requires_grad=True)
                     # print(log_probs)
-                    loss = -torch.sum(log_probs) * reward  # Policy Gradient loss
+                    loss = -torch.sum(log_probs) * (1.0/reward)  # Policy Gradient loss
                     optimizer.zero_grad()
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
                     optimizer.step()
 
                     print(f"Loss: {loss.item()}, Prio: {prio}, Partner Prio: {partner_prio}")
-
-        print(f"Epoch: {epoch}, Average Reward: {epoch_reward / float(len(possible_priorities) ** 2)}")
+                    avg_loss+= loss.item()
+        epoch_str = f"Epoch: {epoch}, Average Loss: {avg_loss/float(len(possible_priorities) ** 2)}, Average Reward: {epoch_reward / float(len(possible_priorities) ** 2)}"
+        print(epoch_str)
+        with open("progress.txt", "a") as f:
+            f.write(epoch_str + "\n")
 
 reinforce_loop()
