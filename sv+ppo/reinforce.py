@@ -41,7 +41,7 @@ def reinforce_loop():
     reinforce_agent = FlanAgent("reinforce_agent", "flan_t5-small-casino/checkpoint-14120")
     partner_agent = FlanAgent("partner_agent", "flan_t5-small-casino/checkpoint-14120")
     agents = [reinforce_agent, partner_agent]
-    optimizer = torch.optim.Adam(reinforce_agent.model.parameters(), lr=5e-5)
+    optimizer = torch.optim.SGD(reinforce_agent.model.parameters(), lr=1e-4, momentum=0.9)
 
     for epoch in range(num_epochs):
         epoch_reward = 0
@@ -66,20 +66,22 @@ def reinforce_loop():
                     # Train the model
                     log_probs = torch.tensor(reinforce_agent.log_probs, requires_grad=True)
                     # print(log_probs)
-                    loss = -torch.sum(log_probs) * (1.0/reward)  # Policy Gradient loss
+                    # loss = -torch.sum(log_probs * torch.tensor(reward))  # Policy Gradient loss
+                    loss = torch.tensor(float(reward), requires_grad=True)
+
                     optimizer.zero_grad()
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                    # torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
                     optimizer.step()
 
                     print(f"Loss: {loss.item()}, Prio: {prio}, Partner Prio: {partner_prio}")
                     avg_loss+= loss.item()
-        epoch_str = f"Epoch: {epoch}, Average Loss: {avg_loss/float(len(possible_priorities) ** 2)}, Average Reward: {epoch_reward / float(len(possible_priorities) ** 2)}"
+        epoch_str = f"Epoch: {epoch+1}, Average Loss: {avg_loss/float(len(possible_priorities) ** 2)}, Average Reward: {epoch_reward / float(len(possible_priorities) ** 2)}"
         print(epoch_str)
         with open("progress.txt", "a") as f:
             f.write(epoch_str + "\n")
 
-    
+
     abc = Dialog(agents)
     abc.selfplay()
     abc.print_dialog()

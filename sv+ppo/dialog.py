@@ -13,13 +13,12 @@ generation_params = {
     "max_length": 600,
     # "no_repeat_ngram_size": 1,
     "do_sample": True,
-    "top_k": 20,
+    "top_k": 10,
     "top_p": 0.95,
     # "temperature": 0.7,
     # "num_return_sequences": 1,
     # "repetition_penalty": 1.3,
     "return_dict_in_generate": True,
-    "output_scores": True,
     "output_logits": True
 }
 debug = False
