@@ -65,13 +65,12 @@ def reinforce_loop():
 
                     # Train the model
                     log_probs = torch.tensor(reinforce_agent.log_probs, requires_grad=True)
-                    # print(log_probs)
-                    # loss = -torch.sum(log_probs * torch.tensor(reward))  # Policy Gradient loss
-                    loss = torch.tensor(float(reward), requires_grad=True)
+                    weighted_log_probs = log_probs * reward
+                    loss = -torch.sum(weighted_log_probs)  # Policy Gradient loss
 
                     optimizer.zero_grad()
                     loss.backward()
-                    # torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                    torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
                     optimizer.step()
 
                     print(f"Loss: {loss.item()}, Prio: {prio}, Partner Prio: {partner_prio}")
