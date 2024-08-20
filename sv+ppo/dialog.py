@@ -15,6 +15,10 @@ generation_params = {
     "temperature": 0.7,
     "num_return_sequences": 1,
     "repetition_penalty": 1.3,
+    "return_dict_in_generate":True,
+    "output_scores" : True
+
+
 }
 debug = False
 class FlanAgent:
@@ -24,13 +28,20 @@ class FlanAgent:
         self.priorities = "Priorities: Low Firewood Medium Water High Food  "
         self.priorities_quant = [0,1,2]
         self.id = id
+        self.log_probs = []
 
     def respond(self, text):
         if debug:
             print(text)
         inputs = self.tokenizer(["Continue writing the following text.\n\n"+ self.priorities + text], return_tensors="pt")
         reply_ids = self.model.generate(**inputs, **generation_params)
-        return self.tokenizer.decode(reply_ids[0], skip_special_tokens=True)
+        print(len(reply_ids['scores']))
+        #process log_probs here
+        log_probs = np.array(reply_ids['scores'])
+        log_probs = np.exp(log_probs) / np.sum(np.exp(log_probs))
+        log_probs = np.log(log_probs)
+        self.log_probs.append(log_probs)
+        return self.tokenizer.decode(reply_ids['sequences'][0], skip_special_tokens=True)
     
     def setPriorities(self, priorities):
         low_2_high = {"Low":0, "Medium":1, "High":2}
@@ -71,7 +82,7 @@ class Dialog:
             if flag:
                 break
         
-        if debug:
+        if True:
             self.print_dialog()
         
         return return_val

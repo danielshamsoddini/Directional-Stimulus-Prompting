@@ -17,8 +17,8 @@ def get_reward(dialog, agent):
         other_offer = final_offers[0] if list(final_offers[0].keys())[0] != agent.id else final_offers[1]
         agent_offer = list(agent_offer.values())[0].split(" ")
         other_offer = list(other_offer.values())[0].split(" ")
-        print(agent_offer)
-        print(other_offer)
+        # print(agent_offer)
+        # print(other_offer)
         #['Submit-Deal', '1', 'Firewood', '3', 'Water', '2', 'Food']
         agent_offer = [agent_offer[1], agent_offer[3], agent_offer[5]]
         other_offer = [other_offer[1], other_offer[3], other_offer[5]]
@@ -67,8 +67,8 @@ def PPO_loop():
                     reward = get_reward(selfplay_result, reinforce_agent)
                     epoch_reward+=reward
                     # Train the model
+                    loss = -torch.tensor(reward)
                     optimizer.zero_grad()
-                    loss = -reward
                     loss.backward()
                     optimizer.step()
                     print(loss)
