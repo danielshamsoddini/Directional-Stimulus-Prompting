@@ -11,17 +11,15 @@ from torch.nn.functional import log_softmax
 import itertools
 generation_params = {
     "max_length": 600,
-    "no_repeat_ngram_size": 1,
+    # "no_repeat_ngram_size": 1,
     "do_sample": True,
-    "top_k": 50,
+    "top_k": 20,
     "top_p": 0.95,
-    "temperature": 0.7,
-    "num_return_sequences": 1,
-    "repetition_penalty": 1.3,
-    "return_dict_in_generate":True,
-    "output_scores" : True
-
-
+    # "temperature": 0.7,
+    # "num_return_sequences": 1,
+    # "repetition_penalty": 1.3,
+    "return_dict_in_generate": True,
+    "output_scores": True
 }
 debug = False
 class FlanAgent:
@@ -40,8 +38,14 @@ class FlanAgent:
         outputs = self.model.generate(**inputs, **generation_params)
 
         # Process log probabilities
+        # print(outputs['scores'])
         log_probs = []
+        # print(outputs['scores'])    
+        # enum_var = outputs['scores'][torch.isfinite(outputs['scores'])]
+        # print(enum_var)
+        # exit()
         for i, logits in enumerate(outputs['scores']):
+            logits = torch.clamp(logits, -1000, 1000)  # Clamp logits to prevent overflow
             probs = log_softmax(logits, dim=-1)  # Get log-softmax over logits
             token_id = outputs['sequences'][0, i]  # Get token id
             log_probs.append(probs[0, token_id].item())  # Get log-prob of generated token
@@ -88,8 +92,9 @@ class Dialog:
             if flag:
                 break
         
-        if debug:
+        if True:
             self.print_dialog()
+            exit()
         
         return return_val
     
@@ -97,6 +102,5 @@ class Dialog:
         for line in self.dialog_history:
             print(line)
 
-Dialog([FlanAgent("agent1","flan_t5-small-casino/checkpoint-14120"), FlanAgent("agent2","flan_t5-small-casino/checkpoint-14120")]).selfplay()
 
         

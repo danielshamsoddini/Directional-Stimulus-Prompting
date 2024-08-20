@@ -4,18 +4,7 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import numpy as np
 import itertools
 from dialog import FlanAgent, Dialog
-generation_params = {
-    "max_length": 600,
-    "no_repeat_ngram_size": 1,
-    "do_sample": True,
-    "top_k": 50,
-    "top_p": 0.95,
-    "temperature": 0.7,
-    "num_return_sequences": 1,
-    "repetition_penalty": 1.3,
-    "return_dict_in_generate": True,
-    "output_scores": True
-}
+
 num_epochs = 10
 possible_priorities = list(itertools.permutations(["Low", "Medium", "High"], 3))
 # Reward function (your original code)
@@ -42,12 +31,12 @@ def get_reward(dialog, agent):
     else:
         print("Walk-Away")
         final_score = 0
-        for a in range(len(agent.priorities_quant)):
-            final_score += 2**agent.priorities_quant[a] * 3
-        return final_score
+        # for a in range(len(agent.priorities_quant)):
+        #     final_score += 2**agent.priorities_quant[a] * 3
+        return 6
 
-# PPO Loop (fixed)
-def PPO_loop():
+# reinforce Loop (fixed)
+def reinforce_loop():
     # Load the agents
     reinforce_agent = FlanAgent("reinforce_agent", "flan_t5-small-casino/checkpoint-14120")
     partner_agent = FlanAgent("partner_agent", "flan_t5-small-casino/checkpoint-14120")
@@ -74,14 +63,16 @@ def PPO_loop():
                     epoch_reward += reward
 
                     # Train the model
-                    log_probs = torch.tensor(reinforce_agent.log_probs)
+                    log_probs = torch.tensor(reinforce_agent.log_probs, requires_grad=True)
+                    # print(log_probs)
                     loss = -torch.sum(log_probs) * reward  # Policy Gradient loss
                     optimizer.zero_grad()
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
                     optimizer.step()
 
                     print(f"Loss: {loss.item()}, Prio: {prio}, Partner Prio: {partner_prio}")
 
         print(f"Epoch: {epoch}, Average Reward: {epoch_reward / float(len(possible_priorities) ** 2)}")
 
-PPO_loop()
+reinforce_loop()
