@@ -5,7 +5,7 @@ import numpy as np
 import itertools
 from dialog import FlanAgent, Dialog
 
-num_epochs = 10
+num_epochs = 50
 possible_priorities = list(itertools.permutations(["Low", "Medium", "High"], 3))
 # Reward function (your original code)
 def get_reward(dialog, agent):
@@ -79,4 +79,8 @@ def reinforce_loop():
         with open("progress.txt", "a") as f:
             f.write(epoch_str + "\n")
 
+    
+    abc = Dialog(agents)
+    abc.selfplay()
+    abc.print_dialog()
 reinforce_loop()

@@ -19,7 +19,8 @@ generation_params = {
     # "num_return_sequences": 1,
     # "repetition_penalty": 1.3,
     "return_dict_in_generate": True,
-    "output_scores": True
+    "output_scores": True,
+    "output_logits": True
 }
 debug = False
 class FlanAgent:
@@ -44,8 +45,11 @@ class FlanAgent:
         # enum_var = outputs['scores'][torch.isfinite(outputs['scores'])]
         # print(enum_var)
         # exit()
-        for i, logits in enumerate(outputs['scores']):
-            logits = torch.clamp(logits, -100, 100)  # Clamp logits to prevent overflow
+        # print(outputs['logits'])
+        # print(outputs['scores'])
+        # exit()
+        for i, logits in enumerate(outputs['logits']):
+            # logits = torch.clamp(logits, -100, 100)  # Clamp logits to prevent overflow
             probs = log_softmax(logits, dim=-1)  # Get log-softmax over logits
             token_id = outputs['sequences'][0, i]  # Get token id
             log_probs.append(probs[0, token_id].item())  # Get log-prob of generated token

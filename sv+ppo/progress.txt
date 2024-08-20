@@ -1,2 +1,0 @@
-Epoch: 0, Average Loss: 950.9700410630968, Average Reward: 10.75
-Epoch: 1, Average Loss: 913.2545132107205, Average Reward: 10.444444444444445
