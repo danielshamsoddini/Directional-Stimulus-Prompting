@@ -46,7 +46,7 @@ def reinforce_loop():
     optimizer = torch.optim.SGD(reinforce_agent.model.parameters(), lr=1e-4, momentum=0.9)
 
     abc = list(itertools.product(possible_priorities, repeat=2))
-    random.shuffle(abc)
+    # random.shuffle(abc)
     base_reward = 0
     for (prio, partner_prio) in abc:
 
@@ -116,4 +116,6 @@ def reinforce_loop():
     abc = Dialog(agents)
     abc.selfplay()
     abc.print_dialog()
+    reinforce_agent.model.save_pretrained("rl_trained", from_pt=True) 
+
 reinforce_loop()
