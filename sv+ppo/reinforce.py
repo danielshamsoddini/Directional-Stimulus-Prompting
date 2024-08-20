@@ -4,8 +4,10 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import numpy as np
 import itertools
 from dialog import FlanAgent, Dialog
+import random
 
 num_epochs = 50
+batch_size = 6
 possible_priorities = list(itertools.permutations(["Low", "Medium", "High"], 3))
 # Reward function (your original code)
 def get_reward(dialog, agent):
@@ -43,44 +45,74 @@ def reinforce_loop():
     agents = [reinforce_agent, partner_agent]
     optimizer = torch.optim.SGD(reinforce_agent.model.parameters(), lr=1e-4, momentum=0.9)
 
+    abc = list(itertools.product(possible_priorities, repeat=2))
+    random.shuffle(abc)
+    base_reward = 0
+    for (prio, partner_prio) in abc:
+
+        reinforce_agent.setPriorities(prio)
+        partner_agent.setPriorities(partner_prio)
+        dialog = Dialog(agents)
+        dialog.selfplay()
+        base_reward += get_reward(dialog.dialog_history, reinforce_agent)
+
+    print(f"Base Reward: {base_reward / float(len(possible_priorities) ** 2)}")
+    with open("progress.txt", "w") as f:
+        f.write(f"Base Reward: {base_reward / float(len(possible_priorities) ** 2)}\n")
     for epoch in range(num_epochs):
         epoch_reward = 0
         avg_loss = 0
-        for prio in possible_priorities:
-            for partner_prio in possible_priorities:
-                reinforce_agent.setPriorities(prio)
-                partner_agent.setPriorities(partner_prio)
-                dialog = Dialog(agents)
+        
+        batch_log_probs = []
+        batch_rewards = []
 
-                # Train the dialog
-                selfplay_result = dialog.selfplay()
+        # Iterate over possible priority combinations
+        for i, (prio, partner_prio) in enumerate(abc):
+            reinforce_agent.setPriorities(prio)
+            partner_agent.setPriorities(partner_prio)
+            dialog = Dialog(agents)
 
-                # Get the reward
-                if selfplay_result:
-                    reward = get_reward(selfplay_result, reinforce_agent)
-                    if reward is None:
-                        continue
+            # Train the dialog
+            selfplay_result = dialog.selfplay()
 
-                    epoch_reward += reward
+            # Get the reward
+            if selfplay_result:
+                reward = get_reward(selfplay_result, reinforce_agent)
+                if reward is None:
+                    continue
 
-                    # Train the model
-                    log_probs = torch.tensor(reinforce_agent.log_probs, requires_grad=True)
-                    weighted_log_probs = log_probs * reward
-                    loss = -torch.sum(weighted_log_probs)  # Policy Gradient loss
+                epoch_reward += reward
 
-                    optimizer.zero_grad()
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-                    optimizer.step()
+                # Accumulate log probabilities and rewards
+                batch_log_probs.extend(reinforce_agent.log_probs)
+                batch_rewards.extend([reward] * len(reinforce_agent.log_probs))
 
-                    print(f"Loss: {loss.item()}, Prio: {prio}, Partner Prio: {partner_prio}")
-                    avg_loss+= loss.item()
+            # When batch is full, perform optimization
+            if (i + 1) % batch_size == 0:
+                # Calculate batch loss
+                log_probs = torch.tensor(batch_log_probs, requires_grad=True)
+                rewards = torch.tensor(batch_rewards, dtype=torch.float32, requires_grad=False)
+                loss = -torch.sum(log_probs * rewards)
+
+                optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                optimizer.step()
+
+                print(f"Batch Loss: {loss.item()}")
+                avg_loss += loss.item()
+
+                # Clear batch data
+                batch_log_probs.clear()
+                batch_rewards.clear()
+
+        # Log epoch statistics
         epoch_str = f"Epoch: {epoch+1}, Average Loss: {avg_loss/float(len(possible_priorities) ** 2)}, Average Reward: {epoch_reward / float(len(possible_priorities) ** 2)}"
         print(epoch_str)
         with open("progress.txt", "a") as f:
             f.write(epoch_str + "\n")
 
-
+    # Run a final selfplay to see the behavior after training
     abc = Dialog(agents)
     abc.selfplay()
     abc.print_dialog()
