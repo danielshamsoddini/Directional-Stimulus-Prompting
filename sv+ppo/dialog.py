@@ -6,6 +6,9 @@ import numpy as np
 import datasets
 from transformers import DataCollatorForSeq2Seq
 import random
+import torch
+from torch.nn.functional import log_softmax
+import itertools
 generation_params = {
     "max_length": 600,
     "no_repeat_ngram_size": 1,
@@ -23,31 +26,34 @@ generation_params = {
 debug = False
 class FlanAgent:
     def __init__(self, id, model_dir):
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_dir,local_files_only=True)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_dir,local_files_only=True)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_dir, local_files_only=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
         self.priorities = "Priorities: Low Firewood Medium Water High Food  "
-        self.priorities_quant = [0,1,2]
+        self.priorities_quant = [0, 1, 2]
         self.id = id
         self.log_probs = []
 
     def respond(self, text):
         if debug:
             print(text)
-        inputs = self.tokenizer(["Continue writing the following text.\n\n"+ self.priorities + text], return_tensors="pt")
-        reply_ids = self.model.generate(**inputs, **generation_params)
-        print(len(reply_ids['scores']))
-        #process log_probs here
-        log_probs = np.array(reply_ids['scores'])
-        log_probs = np.exp(log_probs) / np.sum(np.exp(log_probs))
-        log_probs = list(np.log(log_probs))
+        inputs = self.tokenizer(["Continue writing the following text.\n\n" + self.priorities + text], return_tensors="pt")
+        outputs = self.model.generate(**inputs, **generation_params)
+
+        # Process log probabilities
+        log_probs = []
+        for i, logits in enumerate(outputs['scores']):
+            probs = log_softmax(logits, dim=-1)  # Get log-softmax over logits
+            token_id = outputs['sequences'][0, i]  # Get token id
+            log_probs.append(probs[0, token_id].item())  # Get log-prob of generated token
+
         self.log_probs.extend(log_probs)
-        return self.tokenizer.decode(reply_ids['sequences'][0], skip_special_tokens=True)
-    
+        return self.tokenizer.decode(outputs['sequences'][0], skip_special_tokens=True)
+
     def setPriorities(self, priorities):
-        low_2_high = {"Low":0, "Medium":1, "High":2}
+        low_to_high = {"Low": 0, "Medium": 1, "High": 2}
         self.priorities = f"Priorities: {priorities[0]} Firewood {priorities[1]} Water {priorities[2]} Food  "
-        self.priorities_quant = [low_2_high[priorities[0]], low_2_high[priorities[1]], low_2_high[priorities[2]]]
-    
+        self.priorities_quant = [low_to_high[priorities[0]], low_to_high[priorities[1]], low_to_high[priorities[2]]]
+        self.log_probs = []
 class Dialog:
     def __init__(self, agents):
         self.agents = agents
@@ -82,7 +88,7 @@ class Dialog:
             if flag:
                 break
         
-        if True:
+        if debug:
             self.print_dialog()
         
         return return_val
