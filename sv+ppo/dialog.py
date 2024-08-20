@@ -39,8 +39,8 @@ class FlanAgent:
         #process log_probs here
         log_probs = np.array(reply_ids['scores'])
         log_probs = np.exp(log_probs) / np.sum(np.exp(log_probs))
-        log_probs = np.log(log_probs)
-        self.log_probs.append(log_probs)
+        log_probs = list(np.log(log_probs))
+        self.log_probs.extend(log_probs)
         return self.tokenizer.decode(reply_ids['sequences'][0], skip_special_tokens=True)
     
     def setPriorities(self, priorities):
