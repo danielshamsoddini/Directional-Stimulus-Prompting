@@ -190,23 +190,23 @@ def reinforce_loop():
                         batch_rewards.extend([reward] * len(reinforce_agent.log_probs))
                         batch_print_rewards.append(reward)
 
-            log_probs = torch.tensor(batch_log_probs, requires_grad=True)
-            rewards = torch.tensor(batch_rewards, dtype=torch.float32)
-            rewards = normalize_rewards(rewards)
-            loss = -torch.sum(log_probs * rewards)
+                log_probs = torch.tensor(batch_log_probs, requires_grad=True)
+                rewards = torch.tensor(batch_rewards, dtype=torch.float32)
+                rewards = normalize_rewards(rewards)
+                loss = -torch.sum(log_probs * rewards)
 
-            optimizer.zero_grad()
-            loss.backward()
-            # torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-            optimizer.step()
+                optimizer.zero_grad()
+                loss.backward()
+                # torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                optimizer.step()
 
-            print(f"Batch Loss: {loss.item()}")
-            print(f"Batch Rewards: {batch_print_rewards}")
-            avg_loss += loss.item()
+                print(f"Batch Loss: {loss.item()}")
+                print(f"Batch Rewards: {batch_print_rewards}")
+                avg_loss += loss.item()
 
-            # Clear batch data
-            batch_log_probs.clear()
-            batch_rewards.clear()
+                # Clear batch data
+                batch_log_probs.clear()
+                batch_rewards.clear()
 
         # Log epoch statistics
         epoch_str = f"Epoch: {epoch+1}, Average Loss: {avg_loss/float(len(possible_priorities) ** 2)}, Average Reward: {np.mean(epoch_reward)}"
