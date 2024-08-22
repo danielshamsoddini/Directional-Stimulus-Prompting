@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import pandas as pd
 import random
 import torch
@@ -12,7 +12,12 @@ starter_generation_params = {
     "top_k": 50,
     "top_p": 0.92,
     "return_dict_in_generate": True,
-    "output_logits": True  # Changed from output_logits to output_scores
+    "output_logits": True
+}
+generation_params = {
+    "max_new_tokens": 100,
+    "return_dict_in_generate": True,
+    "output_scores": True
 }
 
 debug = False
@@ -29,26 +34,19 @@ class FlanAgent:
     def respond(self, text, starter):
         if debug:
             print(text)
-        gen_p = starter_generation_params
+        gen_p = generation_params if self.id == "reinforce_agent" else starter_generation_params
         inputs = self.tokenizer(["Continue writing the following text.\n\n" + self.priorities + text], return_tensors="pt")
         outputs = self.model.generate(**inputs, **gen_p)
 
-        # Process log probabilities
-        # print(outputs['scores'])
         log_probs = []
-        # print(outputs['scores'])    
-        # enum_var = outputs['scores'][torch.isfinite(outputs['scores'])]
-        # print(enum_var)
-        # exit()
-        # print(outputs['logits'])
-        # print(outputs['scores'])
-        # exit()
-        for i, logits in enumerate(outputs.logits):
+        chosen_seq = outputs['sequences'][0]
+        out = outputs['scores'] if self.id == "reinforce_agent" else outputs['logits']
+        for i, logits in enumerate(out):
             probs = log_softmax(logits, dim=-1)  # Get log-softmax over logits
-            token_id = outputs['sequences'][0, i]  # Get token id
+            token_id = chosen_seq[i]  # Get token id
             log_probs.append(probs[0, token_id].item())  # Get log-prob of generated token
         self.log_probs.extend(log_probs)
-        return self.tokenizer.decode(outputs['sequences'][0], skip_special_tokens=True)
+        return self.tokenizer.decode(chosen_seq, skip_special_tokens=True)
 
     def initialize(self, priorities):
         low_to_high = {"Low": 0, "Medium": 1, "High": 2}
@@ -63,7 +61,6 @@ class Dialog:
         self.num_rounds = 10
 
     def selfplay(self):
-        # print(self.agents[0].model.parameters())
         random.shuffle(self.agents)
         flag = False
         return_val = None 
@@ -78,7 +75,6 @@ class Dialog:
                         convo_str += f"{you_or_them}: {list(i.values())[0]} "
                 convo_str += "YOU: "
 
-                
                 self.dialog_history.append({agent.id:agent.respond(convo_str, starter)})
                 starter = False
                 if "Accept-Deal" in list(self.dialog_history[-1].values())[0]:
@@ -92,25 +88,22 @@ class Dialog:
             if flag:
                 break
         
-        if debug:
-            self.print_dialog()
-            # exit()
-        
         return return_val if flag else None
     
     def print_dialog(self):
         for line in self.dialog_history:
             print(line)
 
-
-
 num_epochs = 10
-
 possible_priorities = list(itertools.permutations(["Low", "Medium", "High"], 3))
-batch_size = 2
+batch_size = 6
+
 def get_reward(dialog, agent):
     try:
-        item_value = {2:5, 1:4, 0:3}
+        if dialog is None:
+            print("REWARD 0")
+            return 0
+        item_value = {2: 5, 1: 4, 0: 3}
         if dialog != "Walk-Away":
             final_offers = dialog[-2:]
             agent_offer = final_offers[0] if list(final_offers[0].keys())[0] == agent.id else final_offers[1]
@@ -120,17 +113,12 @@ def get_reward(dialog, agent):
 
             agent_offer = [agent_offer[1], agent_offer[3], agent_offer[5]]
             other_offer = [other_offer[1], other_offer[3], other_offer[5]]
-            try:
-                offer_sums = [int(agent_offer[a]) + int(other_offer[a]) for a in range(len(agent_offer))]
-            except:
-                print(dialog)
-                print(final_offers)
-                exit()
+
+            offer_sums = [int(agent_offer[a]) + int(other_offer[a]) for a in range(len(agent_offer))]
             if offer_sums != [3, 3, 3]:
                 print("FAILURE, OFFERS DO NOT SUM TO 3")
                 return None
             else:
-                
                 final_score = 0
                 for a in range(len(agent_offer)):
                     final_score += item_value[agent.priorities_quant[a]] * int(agent_offer[a])
@@ -143,79 +131,59 @@ def get_reward(dialog, agent):
         print("ERROR")
         print(dialog)
         return None
-    
-def normalize_rewards(rewards):
-    mean = rewards.mean()
-    std = rewards.std()
-    if std > 0:
-        normalized_rewards = (rewards - mean) / (std + 1e-8)  # Add a small value to prevent division by zero
-    else:
-        normalized_rewards = rewards - mean  # If std is 0, just center the rewards
-    return normalized_rewards
 
 def reinforce_loop():
-    # Load the agents
     reinforce_agent = FlanAgent("reinforce_agent", "flan_t5-small-casino/checkpoint-14120")
     partner_agent = FlanAgent("partner_agent", "flan_t5-small-casino/checkpoint-14120")
-    optimizer = torch.optim.AdamW(reinforce_agent.model.parameters(), lr=1e-3)#, momentum=0.9)
+    optimizer = torch.optim.AdamW(reinforce_agent.model.parameters(), lr=1e-4)
     epoch_reward = []
-    avg_loss = 0
     
-    batch_log_probs = []
-    batch_rewards = []
-    reward_per_combo = np.zeros(len(possible_priorities) ** 2)
-    # Iterate over possible priority combinations
-    for prio in possible_priorities:
-        for partner_prio in possible_priorities:
-            batch_print_rewards = []
-            for a in range(batch_size):
-                reinforce_agent.initialize(prio)
-                partner_agent.initialize(partner_prio)
-                dialog = Dialog(reinforce_agent, partner_agent)
+    for epoch in range(num_epochs):
+        print(f"Epoch {epoch + 1}/{num_epochs}")
+        batch_log_probs = []
+        batch_rewards = []
+        total_loss = 0
+        
+        for prio in possible_priorities:
+            for partner_prio in possible_priorities:
+                for _ in range(batch_size):
+                    reinforce_agent.initialize(prio)
+                    partner_agent.initialize(partner_prio)
+                    dialog = Dialog(reinforce_agent, partner_agent)
 
-                # Train the dialog
-                selfplay_result = dialog.selfplay()
+                    selfplay_result = dialog.selfplay()
 
-                # Get the reward
-                if selfplay_result:
                     reward = get_reward(selfplay_result, reinforce_agent)
                     if reward is None:
                         continue
 
-                    epoch_reward.append(reward)
-                    # reward_per_combo[i] = reward
-                    # Accumulate log probabilities and rewards
-                    batch_log_probs.extend(reinforce_agent.log_probs)
-                    batch_rewards.extend([reward] * len(reinforce_agent.log_probs))
-                    batch_print_rewards.append(reward)
+                    # Ensure log_probs tensor requires grad
+                    log_probs = torch.tensor(reinforce_agent.log_probs, dtype=torch.float32)
+                    if log_probs.requires_grad == False:
+                        log_probs.requires_grad_(True)
 
-            log_probs = torch.tensor(batch_log_probs, requires_grad=True)
-            rewards = torch.tensor(batch_rewards, dtype=torch.float32)
-            rewards = normalize_rewards(rewards)
-            loss = -torch.sum(log_probs * rewards)
+                    rewards = torch.tensor([reward] * len(log_probs), dtype=torch.float32)
 
-            optimizer.zero_grad()
-            loss.backward()
-            # torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-            optimizer.step()
+                    # Compute the loss
+                    loss = -torch.sum(log_probs * rewards)
+                    total_loss += loss.item()
 
-            print(f"Batch Loss: {loss.item()}")
-            print(f"Batch Rewards: {batch_print_rewards}")
-            avg_loss += loss.item()
+                    # Accumulate gradients
+                    loss.backward()
 
-            # Clear batch data
-            batch_log_probs.clear()
-            batch_rewards.clear()
+                # Perform optimizer step and clear gradients
+                torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                optimizer.step()
+                optimizer.zero_grad()
 
-    # Log epoch statistics
-    epoch_str = f"Epoch: {epoch+1}, Average Loss: {avg_loss/float(len(possible_priorities) ** 2)}, Average Reward: {np.mean(epoch_reward)}"
-    print(epoch_str)
-    temp = Dialog(reinforce_agent, partner_agent)
-    temp.selfplay()
-    temp.print_dialog()
-    with open("progress.txt", "a") as f:
-        f.write(epoch_str + "\n")      
-    
-    reinforce_agent.model.save_pretrained("rl_trained", from_pt=True) 
+        avg_loss = total_loss / (len(possible_priorities) ** 2 * batch_size)
+        print(f"Avg Loss: {avg_loss:.4f}")
+
+        # Evaluate after each epoch
+        temp = Dialog(reinforce_agent, partner_agent)
+        temp.selfplay()
+        temp.print_dialog()
+
+    reinforce_agent.model.save_pretrained("rl_trained", from_pt=True)
 
 reinforce_loop()
