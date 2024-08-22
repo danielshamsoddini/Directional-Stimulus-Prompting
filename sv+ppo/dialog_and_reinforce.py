@@ -152,7 +152,7 @@ class Reinforcer:
         prio_tqdm = tqdm(POSSIBLE_PRIORITIES, desc="Priorities")
         batch_tqdm = tqdm(range(args.batch_size), desc="Batch")
 
-
+        reinforce_agent.model.train()
         for epoch in range(args.num_epochs):
             logging.info(f"Epoch {epoch + 1}/{args.num_epochs}")
             batch_log_probs = []
@@ -163,18 +163,19 @@ class Reinforcer:
             for prio, partner_prio in POSSIBLE_PRIORITIES:
                 for _ in range(args.batch_size):
                     initial_params = {name: param.clone() for name, param in reinforce_agent.model.named_parameters()}
-                    optimizer.zero_grad()
+                    
                     reinforce_agent.initialize(prio)
                     partner_agent.initialize(partner_prio)
                     dialog = Dialog(reinforce_agent, partner_agent, args)
 
+
+                    USE THE MODEL ITSELF INSTEAD OF model.generate, I THINK?>????????
                     selfplay_result = dialog.selfplay()
 
                     reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
                     if reward is None:
                         continue
                     
-
                     epoch_rewards += reward
                     # Ensure log_probs tensor requires grad
                     log_probs = torch.tensor(reinforce_agent.log_probs, dtype=torch.float32, requires_grad=True)
@@ -186,12 +187,14 @@ class Reinforcer:
 
                     # Accumulate gradients
                     loss.backward()
+                    optimizer.step()
+                    optimizer.zero_grad()
 
                     batch_tqdm.update(1)
 
                 
-                    torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-                    optimizer.step()
+                    # torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                    
                     
 
                     for name, param in reinforce_agent.model.named_parameters():
