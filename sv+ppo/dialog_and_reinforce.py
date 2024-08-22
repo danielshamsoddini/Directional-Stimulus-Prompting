@@ -44,7 +44,7 @@ class FlanAgent:
         for i, logits in enumerate(out):
             probs = log_softmax(logits, dim=-1)  # Get log-softmax over logits
             token_id = chosen_seq[i]  # Get token id
-            log_probs.append(probs[0, token_id].item())  # Get log-prob of generated token
+            log_probs.append(probs[0, token_id])  # Get log-prob of generated token
         self.log_probs.extend(log_probs)
         return self.tokenizer.decode(chosen_seq, skip_special_tokens=True)
 
@@ -94,9 +94,9 @@ class Dialog:
         for line in self.dialog_history:
             print(line)
 
-num_epochs = 10
+num_epochs = 20
 possible_priorities = list(itertools.permutations(["Low", "Medium", "High"], 3))
-batch_size = 6
+batch_size = 4
 
 def get_reward(dialog, agent):
     try:
@@ -135,7 +135,7 @@ def get_reward(dialog, agent):
 def reinforce_loop():
     reinforce_agent = FlanAgent("reinforce_agent", "flan_t5-small-casino/checkpoint-14120")
     partner_agent = FlanAgent("partner_agent", "flan_t5-small-casino/checkpoint-14120")
-    optimizer = torch.optim.AdamW(reinforce_agent.model.parameters(), lr=1e-4)
+    optimizer = torch.optim.SGD(reinforce_agent.model.parameters(), lr=1e-4, momentum=0.9)
     epoch_reward = []
     
     for epoch in range(num_epochs):
