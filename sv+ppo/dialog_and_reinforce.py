@@ -169,7 +169,7 @@ class Reinforcer:
                     dialog = Dialog(reinforce_agent, partner_agent, args)
 
 
-                    USE THE MODEL ITSELF INSTEAD OF model.generate, I THINK?>????????
+                    USE THE MODEL ITSELF INSTEAD OF model.generate, I THINK?>???????? the issue is that the model is not being updated by the optimizer
                     selfplay_result = dialog.selfplay()
 
                     reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
