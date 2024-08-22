@@ -3,3 +3,12 @@ Epoch: 2, Average Loss: -17.04518699645996, Average Reward: 18.323943661971832
 Epoch: 3, Average Loss: 3.2149374220106335, Average Reward: 18.34285714285714
 Epoch: 4, Average Loss: 24.20638190375434, Average Reward: 18.805555555555557
 Epoch: 1, Average Loss: 3.2107551627688937, Average Reward: 18.239436619718308
+Epoch: 2, Average Loss: 3.5584000481499567, Average Reward: 18.0
+Epoch: 3, Average Loss: -52.85774162080553, Average Reward: 18.098591549295776
+Epoch: 4, Average Loss: -40.936923609839546, Average Reward: 18.02857142857143
+Epoch: 5, Average Loss: 31.802598476409912, Average Reward: 18.732394366197184
+Epoch: 6, Average Loss: 60.629515435960556, Average Reward: 17.463768115942027
+Epoch: 7, Average Loss: -27.19725884331597, Average Reward: 18.430555555555557
+Epoch: 8, Average Loss: -105.17221299807231, Average Reward: 18.166666666666668
+Epoch: 9, Average Loss: -35.33914846844144, Average Reward: 17.338028169014084
+Epoch: 10, Average Loss: -30.302042351828682, Average Reward: 17.40277777777778

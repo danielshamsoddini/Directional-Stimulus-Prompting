@@ -158,64 +158,63 @@ def reinforce_loop():
     reinforce_agent = FlanAgent("reinforce_agent", "flan_t5-small-casino/checkpoint-14120")
     partner_agent = FlanAgent("partner_agent", "flan_t5-small-casino/checkpoint-14120")
     optimizer = torch.optim.AdamW(reinforce_agent.model.parameters(), lr=1e-3)#, momentum=0.9)
-    for epoch in range(num_epochs):
-        epoch_reward = []
-        avg_loss = 0
-        
-        batch_log_probs = []
-        batch_rewards = []
-        reward_per_combo = np.zeros(len(possible_priorities) ** 2)
-        # Iterate over possible priority combinations
-        for prio in possible_priorities:
-            for partner_prio in possible_priorities:
-                batch_print_rewards = []
-                for a in range(batch_size):
-                    reinforce_agent.initialize(prio)
-                    partner_agent.initialize(partner_prio)
-                    dialog = Dialog(reinforce_agent, partner_agent)
+    epoch_reward = []
+    avg_loss = 0
+    
+    batch_log_probs = []
+    batch_rewards = []
+    reward_per_combo = np.zeros(len(possible_priorities) ** 2)
+    # Iterate over possible priority combinations
+    for prio in possible_priorities:
+        for partner_prio in possible_priorities:
+            batch_print_rewards = []
+            for a in range(batch_size):
+                reinforce_agent.initialize(prio)
+                partner_agent.initialize(partner_prio)
+                dialog = Dialog(reinforce_agent, partner_agent)
 
-                    # Train the dialog
-                    selfplay_result = dialog.selfplay()
+                # Train the dialog
+                selfplay_result = dialog.selfplay()
 
-                    # Get the reward
-                    if selfplay_result:
-                        reward = get_reward(selfplay_result, reinforce_agent)
-                        if reward is None:
-                            continue
+                # Get the reward
+                if selfplay_result:
+                    reward = get_reward(selfplay_result, reinforce_agent)
+                    if reward is None:
+                        continue
 
-                        epoch_reward.append(reward)
-                        # reward_per_combo[i] = reward
-                        # Accumulate log probabilities and rewards
-                        batch_log_probs.extend(reinforce_agent.log_probs)
-                        batch_rewards.extend([reward] * len(reinforce_agent.log_probs))
-                        batch_print_rewards.append(reward)
+                    epoch_reward.append(reward)
+                    # reward_per_combo[i] = reward
+                    # Accumulate log probabilities and rewards
+                    batch_log_probs.extend(reinforce_agent.log_probs)
+                    batch_rewards.extend([reward] * len(reinforce_agent.log_probs))
+                    batch_print_rewards.append(reward)
 
-                log_probs = torch.tensor(batch_log_probs, requires_grad=True)
-                rewards = torch.tensor(batch_rewards, dtype=torch.float32)
-                rewards = normalize_rewards(rewards)
-                loss = -torch.sum(log_probs * rewards)
+            log_probs = torch.tensor(batch_log_probs, requires_grad=True)
+            rewards = torch.tensor(batch_rewards, dtype=torch.float32)
+            rewards = normalize_rewards(rewards)
+            loss = -torch.sum(log_probs * rewards)
 
-                optimizer.zero_grad()
-                loss.backward()
-                # torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-                optimizer.step()
+            optimizer.zero_grad()
+            loss.backward()
+            # torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+            optimizer.step()
 
-                print(f"Batch Loss: {loss.item()}")
-                print(f"Batch Rewards: {batch_print_rewards}")
-                avg_loss += loss.item()
+            print(f"Batch Loss: {loss.item()}")
+            print(f"Batch Rewards: {batch_print_rewards}")
+            avg_loss += loss.item()
 
-                # Clear batch data
-                batch_log_probs.clear()
-                batch_rewards.clear()
+            # Clear batch data
+            batch_log_probs.clear()
+            batch_rewards.clear()
 
-        # Log epoch statistics
-        epoch_str = f"Epoch: {epoch+1}, Average Loss: {avg_loss/float(len(possible_priorities) ** 2)}, Average Reward: {np.mean(epoch_reward)}"
-        print(epoch_str)
-        temp = Dialog(reinforce_agent, partner_agent)
-        temp.selfplay()
-        temp.print_dialog()
-        with open("progress.txt", "a") as f:
-            f.write(epoch_str + "\n")      
+    # Log epoch statistics
+    epoch_str = f"Epoch: {epoch+1}, Average Loss: {avg_loss/float(len(possible_priorities) ** 2)}, Average Reward: {np.mean(epoch_reward)}"
+    print(epoch_str)
+    temp = Dialog(reinforce_agent, partner_agent)
+    temp.selfplay()
+    temp.print_dialog()
+    with open("progress.txt", "a") as f:
+        f.write(epoch_str + "\n")      
     
     reinforce_agent.model.save_pretrained("rl_trained", from_pt=True) 
 
