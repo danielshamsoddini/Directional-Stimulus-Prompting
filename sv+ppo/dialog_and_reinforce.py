@@ -23,6 +23,7 @@ generation_params = {
     "output_scores": True
 }
 POSSIBLE_PRIORITIES = list(itertools.permutations(["Low", "Medium", "High"], 3))
+POSSIBLE_PRIORITIES = list(itertools.product(POSSIBLE_PRIORITIES, repeat=2))
 
 debug = False
 
@@ -147,54 +148,79 @@ class Reinforcer:
         optimizer = torch.optim.SGD(reinforce_agent.model.parameters(), lr=1e-4, momentum=0.9)
         epoch_reward = []
         logging.basicConfig(filename=args.log_file, level=logging.INFO if args.logging_level == "INFO" else logging.DEBUG)
-        
-        for epoch in tqdm(range(args.num_epochs), desc="Epochs"):
+        epoch_tqdm = tqdm(range(args.num_epochs), desc="Epochs")
+        prio_tqdm = tqdm(POSSIBLE_PRIORITIES, desc="Priorities")
+        batch_tqdm = tqdm(range(args.batch_size), desc="Batch")
+
+
+        for epoch in range(args.num_epochs):
             logging.info(f"Epoch {epoch + 1}/{args.num_epochs}")
             batch_log_probs = []
             batch_rewards = []
             total_loss = 0
+            epoch_rewards = 0
             
-            for prio in tqdm(POSSIBLE_PRIORITIES, desc="Priorities"):
-                for partner_prio in tqdm(POSSIBLE_PRIORITIES, desc="Partner Priorities"):
-                    for _ in range(args.batch_size):
-                        reinforce_agent.initialize(prio)
-                        partner_agent.initialize(partner_prio)
-                        dialog = Dialog(reinforce_agent, partner_agent, args)
+            for prio, partner_prio in POSSIBLE_PRIORITIES:
+                for _ in range(args.batch_size):
+                    initial_params = {name: param.clone() for name, param in reinforce_agent.model.named_parameters()}
+                    optimizer.zero_grad()
+                    reinforce_agent.initialize(prio)
+                    partner_agent.initialize(partner_prio)
+                    dialog = Dialog(reinforce_agent, partner_agent, args)
 
-                        selfplay_result = dialog.selfplay()
+                    selfplay_result = dialog.selfplay()
 
-                        reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
-                        if reward is None:
-                            continue
+                    reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
+                    if reward is None:
+                        continue
+                    
 
-                        # Ensure log_probs tensor requires grad
-                        log_probs = torch.tensor(reinforce_agent.log_probs, dtype=torch.float32)
-                        if log_probs.requires_grad == False:
-                            log_probs.requires_grad_(True)
+                    epoch_rewards += reward
+                    # Ensure log_probs tensor requires grad
+                    log_probs = torch.tensor(reinforce_agent.log_probs, dtype=torch.float32, requires_grad=True)
+                    rewards = torch.tensor([reward] * len(log_probs), dtype=torch.float32)
 
-                        rewards = torch.tensor([reward] * len(log_probs), dtype=torch.float32)
+                    # Compute the loss
+                    loss = -torch.sum(log_probs * rewards)
+                    total_loss += loss.item()
 
-                        # Compute the loss
-                        loss = -torch.sum(log_probs * rewards)
-                        total_loss += loss.item()
+                    # Accumulate gradients
+                    loss.backward()
 
-                        # Accumulate gradients
-                        loss.backward()
+                    batch_tqdm.update(1)
 
-                    # Perform optimizer step and clear gradients
+                
                     torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
                     optimizer.step()
-                    optimizer.zero_grad()
+                    
+
+                    for name, param in reinforce_agent.model.named_parameters():
+                        if not torch.equal(initial_params[name], param):
+                            print(f"Parameter '{name}' has been updated.")
+                        
+
+                batch_tqdm.reset()
+                prio_tqdm.update(1)
+                
 
             avg_loss = total_loss / (len(POSSIBLE_PRIORITIES) ** 2 * args.batch_size)
             logging.info(f"Avg Loss: {avg_loss:.4f}")
+            logging.info(f"Avg Reward: {epoch_rewards / (len(POSSIBLE_PRIORITIES) ** 2 * args.batch_size):.4f}")
+
+            prio_tqdm.reset()
+            epoch_tqdm.update(1)
 
             # Evaluate after each epoch
-            temp = Dialog(reinforce_agent, partner_agent)
+            temp = Dialog(reinforce_agent, partner_agent, args)
             temp.selfplay()
             temp.print_dialog()
 
         reinforce_agent.model.save_pretrained("rl_trained", from_pt=True)
+        epoch_tqdm.reset()
+
+        batch_tqdm.close()
+        prio_tqdm.close()
+        epoch_tqdm.close()
 
 
 arg_parser = argparse.ArgumentParser()
@@ -211,5 +237,5 @@ parsed_args = arg_parser.parse_args()
 
 
 
-reinf = Reinforcer()
-reinf.reinforce_loop(parsed_args)
+
+Reinforcer.reinforce_loop(parsed_args)
