@@ -5,8 +5,11 @@ import torch
 from torch.nn.functional import log_softmax
 import itertools
 import numpy as np
+import argparse
+import logging
+from tqdm import tqdm
 
-starter_generation_params = {
+opponent_generation_params = {
     "max_new_tokens": 100,
     "do_sample": True, 
     "top_k": 50,
@@ -19,6 +22,7 @@ generation_params = {
     "return_dict_in_generate": True,
     "output_scores": True
 }
+POSSIBLE_PRIORITIES = list(itertools.permutations(["Low", "Medium", "High"], 3))
 
 debug = False
 
@@ -34,7 +38,7 @@ class FlanAgent:
     def respond(self, text, starter):
         if debug:
             print(text)
-        gen_p = generation_params if self.id == "reinforce_agent" else starter_generation_params
+        gen_p = generation_params if self.id == "reinforce_agent" else opponent_generation_params
         inputs = self.tokenizer(["Continue writing the following text.\n\n" + self.priorities + text], return_tensors="pt")
         outputs = self.model.generate(**inputs, **gen_p)
 
@@ -55,10 +59,11 @@ class FlanAgent:
         self.log_probs = []
 
 class Dialog:
-    def __init__(self, agent1, agent2):
+    def __init__(self, agent1, agent2, args):
         self.agents = [agent1, agent2]
         self.dialog_history = []
-        self.num_rounds = 10
+        self.num_rounds = args.num_rounds
+        self.args = args
 
     def selfplay(self):
         random.shuffle(self.agents)
@@ -92,98 +97,119 @@ class Dialog:
     
     def print_dialog(self):
         for line in self.dialog_history:
-            print(line)
+            logging.info(line)
 
-num_epochs = 20
-possible_priorities = list(itertools.permutations(["Low", "Medium", "High"], 3))
-batch_size = 4
 
-def get_reward(dialog, agent):
-    try:
-        if dialog is None:
-            print("REWARD 0")
-            return 0
-        item_value = {2: 5, 1: 4, 0: 3}
-        if dialog != "Walk-Away":
-            final_offers = dialog[-2:]
-            agent_offer = final_offers[0] if list(final_offers[0].keys())[0] == agent.id else final_offers[1]
-            other_offer = final_offers[0] if list(final_offers[0].keys())[0] != agent.id else final_offers[1]
-            agent_offer = list(agent_offer.values())[0].split(" ")
-            other_offer = list(other_offer.values())[0].split(" ")
+class Reinforcer:
+    def get_reward(dialog, our_agent, partner_agent, utility):
+        try:
+            if dialog is None or dialog == "Walk-Away":
+                logging.debug("REWARD 0")
+                return 0
+            item_value = {2: 5, 1: 4, 0: 3}
+            if dialog != "Walk-Away":
+                final_offers = dialog[-2:]
+                agent_offer = final_offers[0] if list(final_offers[0].keys())[0] == our_agent.id else final_offers[1]
+                other_offer = final_offers[0] if list(final_offers[0].keys())[0] != our_agent.id else final_offers[1]
+                agent_offer = list(agent_offer.values())[0].split(" ")
+                other_offer = list(other_offer.values())[0].split(" ")
 
-            agent_offer = [agent_offer[1], agent_offer[3], agent_offer[5]]
-            other_offer = [other_offer[1], other_offer[3], other_offer[5]]
+                agent_offer = [agent_offer[1], agent_offer[3], agent_offer[5]]
+                other_offer = [other_offer[1], other_offer[3], other_offer[5]]
 
-            offer_sums = [int(agent_offer[a]) + int(other_offer[a]) for a in range(len(agent_offer))]
-            if offer_sums != [3, 3, 3]:
-                print("FAILURE, OFFERS DO NOT SUM TO 3")
-                return None
-            else:
-                final_score = 0
-                for a in range(len(agent_offer)):
-                    final_score += item_value[agent.priorities_quant[a]] * int(agent_offer[a])
-                print("VALID OFFER, Final Score:", final_score)
-                return final_score
-        else:
-            print("Walk-Away")
-            return 6
-    except:
-        print("ERROR")
-        print(dialog)
-        return None
+                offer_sums = [int(agent_offer[a]) + int(other_offer[a]) for a in range(len(agent_offer))]
+                if offer_sums != [3, 3, 3]:
+                    print("FAILURE, OFFERS DO NOT SUM TO 3")
+                    return None
+                else:
+                    final_score = 0
+                    for a in range(len(agent_offer)):
+                        final_score += item_value[our_agent.priorities_quant[a]] * int(agent_offer[a])
+                    partner_final_score = 0
+                    for a in range(len(other_offer)):
+                        partner_final_score += item_value[partner_agent.priorities_quant[a]] * int(other_offer[a])
+                    if utility != "selfish":
+                        #utility function
+                        reward = final_score - (0.75*max(0, partner_final_score - final_score)) - (0.75* max(0, final_score - partner_final_score))
+                    else:
+                        reward = final_score
 
-def reinforce_loop():
-    reinforce_agent = FlanAgent("reinforce_agent", "flan_t5-small-casino/checkpoint-14120")
-    partner_agent = FlanAgent("partner_agent", "flan_t5-small-casino/checkpoint-14120")
-    optimizer = torch.optim.SGD(reinforce_agent.model.parameters(), lr=1e-4, momentum=0.9)
-    epoch_reward = []
-    
-    for epoch in range(num_epochs):
-        print(f"Epoch {epoch + 1}/{num_epochs}")
-        batch_log_probs = []
-        batch_rewards = []
-        total_loss = 0
+                    logging.debug("VALID OFFER, Final Score:", reward)
+                    return reward
+        except Exception as e:
+            logging.error("ERROR:", e)
+            logging.info(dialog)
+            return None
+
+    def reinforce_loop(args):
+        reinforce_agent = FlanAgent("reinforce_agent", args.model_dir)
+        partner_agent = FlanAgent("partner_agent", args.model_dir)
+        optimizer = torch.optim.SGD(reinforce_agent.model.parameters(), lr=1e-4, momentum=0.9)
+        epoch_reward = []
+        logging.basicConfig(filename=args.log_file, level=logging.INFO if args.logging_level == "INFO" else logging.DEBUG)
         
-        for prio in possible_priorities:
-            for partner_prio in possible_priorities:
-                for _ in range(batch_size):
-                    reinforce_agent.initialize(prio)
-                    partner_agent.initialize(partner_prio)
-                    dialog = Dialog(reinforce_agent, partner_agent)
+        for epoch in tqdm(range(args.num_epochs), desc="Epochs"):
+            logging.info(f"Epoch {epoch + 1}/{args.num_epochs}")
+            batch_log_probs = []
+            batch_rewards = []
+            total_loss = 0
+            
+            for prio in tqdm(POSSIBLE_PRIORITIES, desc="Priorities"):
+                for partner_prio in tqdm(POSSIBLE_PRIORITIES, desc="Partner Priorities"):
+                    for _ in range(args.batch_size):
+                        reinforce_agent.initialize(prio)
+                        partner_agent.initialize(partner_prio)
+                        dialog = Dialog(reinforce_agent, partner_agent, args)
 
-                    selfplay_result = dialog.selfplay()
+                        selfplay_result = dialog.selfplay()
 
-                    reward = get_reward(selfplay_result, reinforce_agent)
-                    if reward is None:
-                        continue
+                        reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
+                        if reward is None:
+                            continue
 
-                    # Ensure log_probs tensor requires grad
-                    log_probs = torch.tensor(reinforce_agent.log_probs, dtype=torch.float32)
-                    if log_probs.requires_grad == False:
-                        log_probs.requires_grad_(True)
+                        # Ensure log_probs tensor requires grad
+                        log_probs = torch.tensor(reinforce_agent.log_probs, dtype=torch.float32)
+                        if log_probs.requires_grad == False:
+                            log_probs.requires_grad_(True)
 
-                    rewards = torch.tensor([reward] * len(log_probs), dtype=torch.float32)
+                        rewards = torch.tensor([reward] * len(log_probs), dtype=torch.float32)
 
-                    # Compute the loss
-                    loss = -torch.sum(log_probs * rewards)
-                    total_loss += loss.item()
+                        # Compute the loss
+                        loss = -torch.sum(log_probs * rewards)
+                        total_loss += loss.item()
 
-                    # Accumulate gradients
-                    loss.backward()
+                        # Accumulate gradients
+                        loss.backward()
 
-                # Perform optimizer step and clear gradients
-                torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-                optimizer.step()
-                optimizer.zero_grad()
+                    # Perform optimizer step and clear gradients
+                    torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                    optimizer.step()
+                    optimizer.zero_grad()
 
-        avg_loss = total_loss / (len(possible_priorities) ** 2 * batch_size)
-        print(f"Avg Loss: {avg_loss:.4f}")
+            avg_loss = total_loss / (len(POSSIBLE_PRIORITIES) ** 2 * args.batch_size)
+            logging.info(f"Avg Loss: {avg_loss:.4f}")
 
-        # Evaluate after each epoch
-        temp = Dialog(reinforce_agent, partner_agent)
-        temp.selfplay()
-        temp.print_dialog()
+            # Evaluate after each epoch
+            temp = Dialog(reinforce_agent, partner_agent)
+            temp.selfplay()
+            temp.print_dialog()
 
-    reinforce_agent.model.save_pretrained("rl_trained", from_pt=True)
+        reinforce_agent.model.save_pretrained("rl_trained", from_pt=True)
 
-reinforce_loop()
+
+arg_parser = argparse.ArgumentParser()
+arg_parser.add_argument("--num_epochs", type=int, default=10)
+arg_parser.add_argument("--batch_size", type=int, default=4)
+arg_parser.add_argument("--debug", action="store_true")
+arg_parser.add_argument("--model_dir", type=str, default="flan_t5-small-casino/checkpoint-14120")
+arg_parser.add_argument("--output_dir", type=str, default="rl_trained")
+arg_parser.add_argument("--num_rounds", type=int, default=10)
+arg_parser.add_argument("--utility", type=str, default="selfish")
+arg_parser.add_argument("--logging_level", type=str, default="INFO")
+arg_parser.add_argument("--log_file", type=str, default="reinforce.log")
+parsed_args = arg_parser.parse_args()
+
+
+
+reinf = Reinforcer()
+reinf.reinforce_loop(parsed_args)
