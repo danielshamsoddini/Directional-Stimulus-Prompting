@@ -62,7 +62,7 @@ class FlanAgent:
     def respond_rl(self, text, starter):
         if debug:
             print(text)
-            
+        # print("\nSTUCK HERE\n")
         inputs = self.tokenizer(["Continue writing the following text.\n\n" + self.priorities + text], return_tensors="pt")
         
         # Initialize variables for storing generated sequence and logits
@@ -210,19 +210,20 @@ class Reinforcer:
         logging.basicConfig(filename=args.log_file, level=logging.INFO if args.logging_level == "INFO" else logging.DEBUG)
         epoch_tqdm = tqdm(range(args.num_epochs), desc="Epochs")
         prio_tqdm = tqdm(POSSIBLE_PRIORITIES, desc="Priorities")
-        batch_tqdm = tqdm(range(args.batch_size), desc="Batch")
 
         reinforce_agent.model.train()
         for epoch in range(args.num_epochs):
-            logging.info(f"Epoch {epoch + 1}/{args.num_epochs}")
-            batch_log_probs = []
-            batch_rewards = []
+            logging.info(f"Epoch {epoch + 1}/{args.num_epochs}")            
             total_loss = 0
             epoch_rewards = 0
             
             for prio, partner_prio in POSSIBLE_PRIORITIES:
+                # initial_params = {name: param.clone() for name, param in reinforce_agent.model.named_parameters()}
+                batch_probs = [0] * args.batch_size
+                batch_rewards = []
+                optimizer.zero_grad()
                 for _ in range(args.batch_size):
-                    initial_params = {name: param.clone() for name, param in reinforce_agent.model.named_parameters()}
+                    
                     # out = reinforce_agent.model(reinforce_agent.tokenizer(["Continue writing the following text.\n\n" + reinforce_agent.priorities + "YOU: "], return_tensors="pt"))
                     
                     reinforce_agent.initialize(prio)
@@ -239,33 +240,36 @@ class Reinforcer:
                     epoch_rewards += reward
                     # Ensure log_probs tensor requires grad
                     
-
+                    batch_rewards.append(reward)
+                    batch_probs[_] = reinforce_agent.log_probs
                     # Compute the loss
-                    loss = 0
-                    for log_prob in reinforce_agent.log_probs:
-                        loss += -log_prob * reward
+                    
 
                     # total_loss += loss.item()
 
                     # Accumulate gradients
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
+                    
                     
 
-                    batch_tqdm.update(1)
 
                 
-                    # torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-                    
-                    
-
-                    for name, param in reinforce_agent.model.named_parameters():
-                        if not torch.equal(initial_params[name], param):
-                            print(f"Parameter '{name}' has been updated.")
+                    # 
+                loss = 0
+                for reward, batch_probs in zip(batch_rewards, batch_probs):
+                    for log_prob in batch_probs:
+                        loss += -log_prob * reward
+                
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                optimizer.step()
+                # for name, param in reinforce_agent.model.named_parameters():
+                #     if not torch.equal(initial_params[name], param):
+                #         print(f"Model Updated")
+                #         logging.debug(f"Model Updated")
+                #         break
                         
 
-                batch_tqdm.reset()
+                
                 prio_tqdm.update(1)
                 
 
@@ -284,7 +288,6 @@ class Reinforcer:
         reinforce_agent.model.save_pretrained("rl_trained", from_pt=True)
         epoch_tqdm.reset()
 
-        batch_tqdm.close()
         prio_tqdm.close()
         epoch_tqdm.close()
 
