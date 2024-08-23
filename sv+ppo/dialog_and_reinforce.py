@@ -8,7 +8,7 @@ import numpy as np
 import argparse
 import logging
 from tqdm import tqdm
-
+import torch.nn.functional as F
 opponent_generation_params = {
     "max_new_tokens": 100,
     "do_sample": True, 
@@ -45,15 +45,17 @@ class FlanAgent:
 
         log_probs = []
         chosen_seq = outputs['sequences'][0]
-        out = outputs['scores'] if self.id == "reinforce_agent" else outputs['logits']
-        if self.id == "reinforce_agent":
-            print(len(outputs.scores))
-            print(len(outputs.sequences[0]))
-            # 
-        for i, logits in enumerate(out):
-            probs = log_softmax(logits, dim=-1)  # Get log-softmax over logits
-            log_probs.append(probs)
-        self.log_probs.extend(log_probs)
+        logits = self.model(**inputs, labels=inputs["input_ids"]).logits
+        
+
+        # if self.id == "reinforce_agent":
+        #     print(len(outputs.scores))
+        #     print(len(outputs.sequences[0]))
+        #     # 
+        # for i, logits in enumerate(logits):
+        #     probs = log_softmax(logits, dim=-1)  # Get log-softmax over logits
+        #     log_probs.append(probs)
+        # self.log_probs.extend(log_probs)
         return self.tokenizer.decode(chosen_seq, skip_special_tokens=True)
 
     def initialize(self, priorities):
@@ -173,14 +175,29 @@ class Reinforcer:
                     dialog = Dialog(reinforce_agent, partner_agent, args)
 
                     #use model.generate for dialogue but use model.forward for calculating loss+ backprop
-                    inputs = reinforce_agent.tokenizer("Continue writing the following text.\n\n Priorities: Low Firewood Medium Water High Food  YOU:", return_tensors="pt")
+                    inputs = reinforce_agent.tokenizer("Continue writing the following text ", return_tensors="pt")
+                    print(inputs)
                     outputs = reinforce_agent.model(**inputs, labels=inputs["input_ids"])
                     logits = outputs.logits
-                    print(logits)
+                    print(logits.shape)
+                    probs = F.softmax(logits, dim=-1)
                     log_probs = log_softmax(logits, dim=-1)
                     predicted_token_ids = torch.argmax(logits, dim=-1)
-                    predicted_text = reinforce_agent.tokenizer.decode(predicted_token_ids[0], skip_special_tokens=True)
-                    print(predicted_text)
+                    sampled_tokens = torch.multinomial(probs[0], num_samples=1).squeeze(-1)
+                    predicted_text = reinforce_agent.tokenizer.decode(sampled_tokens, skip_special_tokens=False)
+                    print(len(reinforce_agent.model.generate(**inputs, **generation_params).scores))
+                    # print(predicted_text)
+                    def generate_from_forward_pass(model, tokenizer, prompt, max_length=1000):
+                        input_ids = tokenizer.encode(prompt, return_tensors="pt")
+                        for _ in range(max_length):
+                            outputs = model(input_ids, labels=input_ids)
+                            next_token_logits = outputs.logits[:, -1, :]
+                            next_token = torch.argmax(next_token_logits, dim=-1)
+                            input_ids = torch.cat([input_ids, next_token.unsqueeze(0)], dim=-1)
+                            # if next_token.item() == tokenizer.eos_token_id:
+                            #     break
+                        return tokenizer.decode(input_ids[0], skip_special_tokens=True)
+                    print(generate_from_forward_pass(reinforce_agent.model, reinforce_agent.tokenizer, "Continue writing the following text.\n\n" + reinforce_agent.priorities + "THEM: Hello! YOU: ", max_length=100))
                     exit()
 
 
