@@ -46,9 +46,9 @@ class FlanAgent:
 
         log_probs = []
         chosen_seq = outputs['sequences'][0]
-        logits = self.model(**inputs, labels=inputs["input_ids"]).logits
+        # logits = self.model(**inputs, labels=inputs["input_ids"]).logits
         
-        print(outputs.logits)
+        # print(outputs.logits)
         # if self.id == "reinforce_agent":
         #     print(len(outputs.scores))
         #     print(len(outputs.sequences[0]))
@@ -68,6 +68,8 @@ class FlanAgent:
         # Initialize variables for storing generated sequence and logits
         generated_sequence = inputs["input_ids"]
         decoder_input_ids = torch.tensor([[self.tokenizer.pad_token_id]], device=generated_sequence.device)  # Start with the PAD token
+        log_probs = []
+        actions = []
 
         for _ in range(generation_params["max_new_tokens"]):
             # Perform a forward pass
@@ -79,6 +81,12 @@ class FlanAgent:
             # Apply sampling or greedy decoding to get the next token
             next_token_id = torch.argmax(next_token_logits, dim=-1)
             
+            log_prob = log_softmax(next_token_logits, dim=-1)
+            chosen_log_prob = log_prob[0, next_token_id]
+            log_probs.append(chosen_log_prob)
+            actions.append(next_token_id)
+
+
             # Append the next token to the decoder input IDs
             decoder_input_ids = torch.cat([decoder_input_ids, next_token_id.unsqueeze(0)], dim=-1)
 
@@ -90,6 +98,9 @@ class FlanAgent:
         
         # Decode the generated sequence into text
         final_text = self.tokenizer.decode(decoder_input_ids[0], skip_special_tokens=True)
+        self.log_probs.extend(log_probs)
+
+
         # print(final_text)
         return final_text
 
@@ -139,7 +150,7 @@ class Dialog:
                 break
 
 
-        self.print_dialog()
+        # self.print_dialog()
 
 
         return return_val if flag else None
@@ -218,9 +229,6 @@ class Reinforcer:
                     partner_agent.initialize(partner_prio)
                     dialog = Dialog(reinforce_agent, partner_agent, args)
 
-                    
-
-                    
                     # USE THE MODEL ITSELF INSTEAD OF model.generate, I THINK?>???????? the issue is that the model is not being updated by the optimizer
                     selfplay_result = dialog.selfplay()
 
