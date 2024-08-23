@@ -46,10 +46,13 @@ class FlanAgent:
         log_probs = []
         chosen_seq = outputs['sequences'][0]
         out = outputs['scores'] if self.id == "reinforce_agent" else outputs['logits']
+        if self.id == "reinforce_agent":
+            print(len(outputs.scores))
+            print(len(outputs.sequences[0]))
+            # 
         for i, logits in enumerate(out):
             probs = log_softmax(logits, dim=-1)  # Get log-softmax over logits
-            token_id = chosen_seq[i]  # Get token id
-            log_probs.append(probs[0, token_id])  # Get log-prob of generated token
+            log_probs.append(probs)
         self.log_probs.extend(log_probs)
         return self.tokenizer.decode(chosen_seq, skip_special_tokens=True)
 
@@ -163,13 +166,20 @@ class Reinforcer:
             for prio, partner_prio in POSSIBLE_PRIORITIES:
                 for _ in range(args.batch_size):
                     initial_params = {name: param.clone() for name, param in reinforce_agent.model.named_parameters()}
+                    # out = reinforce_agent.model(reinforce_agent.tokenizer(["Continue writing the following text.\n\n" + reinforce_agent.priorities + "YOU: "], return_tensors="pt"))
                     
                     reinforce_agent.initialize(prio)
                     partner_agent.initialize(partner_prio)
                     dialog = Dialog(reinforce_agent, partner_agent, args)
 
 
-                    USE THE MODEL ITSELF INSTEAD OF model.generate, I THINK?>???????? the issue is that the model is not being updated by the optimizer
+                    inputs = reinforce_agent.tokenizer(["hello my name is abc"], return_tensors="pt")
+                    outputs = reinforce_agent.model(**inputs, labels=inputs["input_ids"])
+                    print(outputs)
+                    exit()
+                    
+                    
+                    # USE THE MODEL ITSELF INSTEAD OF model.generate, I THINK?>???????? the issue is that the model is not being updated by the optimizer
                     selfplay_result = dialog.selfplay()
 
                     reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
@@ -178,17 +188,20 @@ class Reinforcer:
                     
                     epoch_rewards += reward
                     # Ensure log_probs tensor requires grad
-                    log_probs = torch.tensor(reinforce_agent.log_probs, dtype=torch.float32, requires_grad=True)
-                    rewards = torch.tensor([reward] * len(log_probs), dtype=torch.float32)
+                    
 
                     # Compute the loss
-                    loss = -torch.sum(log_probs * rewards)
-                    total_loss += loss.item()
+                    loss = 0
+                    for log_prob in reinforce_agent.log_probs:
+                        loss += -log_prob * reward
+
+                    # total_loss += loss.item()
 
                     # Accumulate gradients
+                    optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-                    optimizer.zero_grad()
+                    
 
                     batch_tqdm.update(1)
 
