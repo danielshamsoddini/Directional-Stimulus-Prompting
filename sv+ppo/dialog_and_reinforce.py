@@ -172,12 +172,18 @@ class Reinforcer:
                     partner_agent.initialize(partner_prio)
                     dialog = Dialog(reinforce_agent, partner_agent, args)
 
-
-                    inputs = reinforce_agent.tokenizer(["hello my name is abc"], return_tensors="pt")
+                    #use model.generate for dialogue but use model.forward for calculating loss+ backprop
+                    inputs = reinforce_agent.tokenizer("Continue writing the following text.\n\n Priorities: Low Firewood Medium Water High Food  YOU:", return_tensors="pt")
                     outputs = reinforce_agent.model(**inputs, labels=inputs["input_ids"])
-                    print(outputs)
+                    logits = outputs.logits
+                    print(logits)
+                    log_probs = log_softmax(logits, dim=-1)
+                    predicted_token_ids = torch.argmax(logits, dim=-1)
+                    predicted_text = reinforce_agent.tokenizer.decode(predicted_token_ids[0], skip_special_tokens=True)
+                    print(predicted_text)
                     exit()
-                    
+
+
                     
                     # USE THE MODEL ITSELF INSTEAD OF model.generate, I THINK?>???????? the issue is that the model is not being updated by the optimizer
                     selfplay_result = dialog.selfplay()
