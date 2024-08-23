@@ -20,7 +20,8 @@ opponent_generation_params = {
 generation_params = {
     "max_new_tokens": 100,
     "return_dict_in_generate": True,
-    "output_scores": True
+    "output_scores": True,
+    "output_logits": True
 }
 POSSIBLE_PRIORITIES = list(itertools.permutations(["Low", "Medium", "High"], 3))
 POSSIBLE_PRIORITIES = list(itertools.product(POSSIBLE_PRIORITIES, repeat=2))
@@ -47,7 +48,7 @@ class FlanAgent:
         chosen_seq = outputs['sequences'][0]
         logits = self.model(**inputs, labels=inputs["input_ids"]).logits
         
-
+        print(outputs.logits)
         # if self.id == "reinforce_agent":
         #     print(len(outputs.scores))
         #     print(len(outputs.sequences[0]))
@@ -175,30 +176,30 @@ class Reinforcer:
                     dialog = Dialog(reinforce_agent, partner_agent, args)
 
                     #use model.generate for dialogue but use model.forward for calculating loss+ backprop
-                    inputs = reinforce_agent.tokenizer("Continue writing the following text ", return_tensors="pt")
-                    print(inputs)
-                    outputs = reinforce_agent.model(**inputs, labels=inputs["input_ids"])
-                    logits = outputs.logits
-                    print(logits.shape)
-                    probs = F.softmax(logits, dim=-1)
-                    log_probs = log_softmax(logits, dim=-1)
-                    predicted_token_ids = torch.argmax(logits, dim=-1)
-                    sampled_tokens = torch.multinomial(probs[0], num_samples=1).squeeze(-1)
-                    predicted_text = reinforce_agent.tokenizer.decode(sampled_tokens, skip_special_tokens=False)
-                    print(len(reinforce_agent.model.generate(**inputs, **generation_params).scores))
-                    # print(predicted_text)
-                    def generate_from_forward_pass(model, tokenizer, prompt, max_length=1000):
-                        input_ids = tokenizer.encode(prompt, return_tensors="pt")
-                        for _ in range(max_length):
-                            outputs = model(input_ids, labels=input_ids)
-                            next_token_logits = outputs.logits[:, -1, :]
-                            next_token = torch.argmax(next_token_logits, dim=-1)
-                            input_ids = torch.cat([input_ids, next_token.unsqueeze(0)], dim=-1)
-                            # if next_token.item() == tokenizer.eos_token_id:
-                            #     break
-                        return tokenizer.decode(input_ids[0], skip_special_tokens=True)
-                    print(generate_from_forward_pass(reinforce_agent.model, reinforce_agent.tokenizer, "Continue writing the following text.\n\n" + reinforce_agent.priorities + "THEM: Hello! YOU: ", max_length=100))
-                    exit()
+                    # inputs = reinforce_agent.tokenizer("Continue writing the following text ", return_tensors="pt")
+                    # print(inputs)
+                    # outputs = reinforce_agent.model(**inputs, labels=inputs["input_ids"])
+                    # logits = outputs.logits
+                    # print(logits.shape)
+                    # probs = F.softmax(logits, dim=-1)
+                    # log_probs = log_softmax(logits, dim=-1)
+                    # predicted_token_ids = torch.argmax(logits, dim=-1)
+                    # sampled_tokens = torch.multinomial(probs[0], num_samples=1).squeeze(-1)
+                    # predicted_text = reinforce_agent.tokenizer.decode(sampled_tokens, skip_special_tokens=False)
+                    # print(len(reinforce_agent.model.generate(**inputs, **generation_params).scores))
+                    # # print(predicted_text)
+                    # def generate_from_forward_pass(model, tokenizer, prompt, max_length=1000):
+                    #     input_ids = tokenizer.encode(prompt, return_tensors="pt")
+                    #     for _ in range(max_length):
+                    #         outputs = model(input_ids, labels=input_ids)
+                    #         next_token_logits = outputs.logits[:, -1, :]
+                    #         next_token = torch.argmax(next_token_logits, dim=-1)
+                    #         input_ids = torch.cat([input_ids, next_token.unsqueeze(0)], dim=-1)
+                    #         # if next_token.item() == tokenizer.eos_token_id:
+                    #         #     break
+                    #     return tokenizer.decode(input_ids[0], skip_special_tokens=True)
+                    # print(generate_from_forward_pass(reinforce_agent.model, reinforce_agent.tokenizer, "Continue writing the following text.\n\n" + reinforce_agent.priorities + "THEM: Hello! YOU: ", max_length=100))
+                    # exit()
 
 
                     
