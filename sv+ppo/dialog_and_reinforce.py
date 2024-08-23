@@ -58,6 +58,41 @@ class FlanAgent:
         #     log_probs.append(probs)
         # self.log_probs.extend(log_probs)
         return self.tokenizer.decode(chosen_seq, skip_special_tokens=True)
+    
+    def respond_rl(self, text, starter):
+        if debug:
+            print(text)
+            
+        inputs = self.tokenizer(["Continue writing the following text.\n\n" + self.priorities + text], return_tensors="pt")
+        
+        # Initialize variables for storing generated sequence and logits
+        generated_sequence = inputs["input_ids"]
+        decoder_input_ids = torch.tensor([[self.tokenizer.pad_token_id]], device=generated_sequence.device)  # Start with the PAD token
+
+        for _ in range(generation_params["max_new_tokens"]):
+            # Perform a forward pass
+            outputs = self.model(input_ids=generated_sequence, decoder_input_ids=decoder_input_ids, return_dict=True)
+            
+            # Get the logits for the last token in the sequence
+            next_token_logits = outputs.logits[:, -1, :]
+            
+            # Apply sampling or greedy decoding to get the next token
+            next_token_id = torch.argmax(next_token_logits, dim=-1)
+            
+            # Append the next token to the decoder input IDs
+            decoder_input_ids = torch.cat([decoder_input_ids, next_token_id.unsqueeze(0)], dim=-1)
+
+            # Optionally, update past_key_values for faster generation
+
+            # Break if the model generates the end-of-sequence token
+            if next_token_id.item() == self.tokenizer.eos_token_id:
+                break
+        
+        # Decode the generated sequence into text
+        final_text = self.tokenizer.decode(decoder_input_ids[0], skip_special_tokens=True)
+        # print(final_text)
+        return final_text
+
 
     def initialize(self, priorities):
         low_to_high = {"Low": 0, "Medium": 1, "High": 2}
@@ -86,8 +121,11 @@ class Dialog:
                         you_or_them = "YOU: " if list(i.keys())[0] == agent.id else "THEM: "
                         convo_str += f"{you_or_them}: {list(i.values())[0]} "
                 convo_str += "YOU: "
-
-                self.dialog_history.append({agent.id:agent.respond(convo_str, starter)})
+                if agent.id == "reinforce_agent":
+                    response = agent.respond_rl(convo_str, starter)
+                else:
+                    response = agent.respond(convo_str, starter) 
+                self.dialog_history.append({agent.id:response})
                 starter = False
                 if "Accept-Deal" in list(self.dialog_history[-1].values())[0]:
                     flag = True
@@ -99,12 +137,17 @@ class Dialog:
                     break
             if flag:
                 break
-        
+
+
+        self.print_dialog()
+
+
         return return_val if flag else None
     
     def print_dialog(self):
         for line in self.dialog_history:
             logging.info(line)
+            print(line)
 
 
 class Reinforcer:
@@ -175,32 +218,7 @@ class Reinforcer:
                     partner_agent.initialize(partner_prio)
                     dialog = Dialog(reinforce_agent, partner_agent, args)
 
-                    #use model.generate for dialogue but use model.forward for calculating loss+ backprop
-                    # inputs = reinforce_agent.tokenizer("Continue writing the following text ", return_tensors="pt")
-                    # print(inputs)
-                    # outputs = reinforce_agent.model(**inputs, labels=inputs["input_ids"])
-                    # logits = outputs.logits
-                    # print(logits.shape)
-                    # probs = F.softmax(logits, dim=-1)
-                    # log_probs = log_softmax(logits, dim=-1)
-                    # predicted_token_ids = torch.argmax(logits, dim=-1)
-                    # sampled_tokens = torch.multinomial(probs[0], num_samples=1).squeeze(-1)
-                    # predicted_text = reinforce_agent.tokenizer.decode(sampled_tokens, skip_special_tokens=False)
-                    # print(len(reinforce_agent.model.generate(**inputs, **generation_params).scores))
-                    # # print(predicted_text)
-                    # def generate_from_forward_pass(model, tokenizer, prompt, max_length=1000):
-                    #     input_ids = tokenizer.encode(prompt, return_tensors="pt")
-                    #     for _ in range(max_length):
-                    #         outputs = model(input_ids, labels=input_ids)
-                    #         next_token_logits = outputs.logits[:, -1, :]
-                    #         next_token = torch.argmax(next_token_logits, dim=-1)
-                    #         input_ids = torch.cat([input_ids, next_token.unsqueeze(0)], dim=-1)
-                    #         # if next_token.item() == tokenizer.eos_token_id:
-                    #         #     break
-                    #     return tokenizer.decode(input_ids[0], skip_special_tokens=True)
-                    # print(generate_from_forward_pass(reinforce_agent.model, reinforce_agent.tokenizer, "Continue writing the following text.\n\n" + reinforce_agent.priorities + "THEM: Hello! YOU: ", max_length=100))
-                    # exit()
-
+                    
 
                     
                     # USE THE MODEL ITSELF INSTEAD OF model.generate, I THINK?>???????? the issue is that the model is not being updated by the optimizer
