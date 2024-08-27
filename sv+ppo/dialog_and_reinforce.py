@@ -9,6 +9,7 @@ import argparse
 import logging
 from tqdm import tqdm
 import torch.nn.functional as F
+
 opponent_generation_params = {
     "max_new_tokens": 100,
     "do_sample": True, 
@@ -37,32 +38,19 @@ class FlanAgent:
         self.id = id
         self.log_probs = []
 
-    def respond(self, text, starter):
+    def respond_generate(self, text, starter):
         if debug:
             print(text)
         gen_p = generation_params if self.id == "reinforce_agent" else opponent_generation_params
         inputs = self.tokenizer(["Continue writing the following text.\n\n" + self.priorities + text], return_tensors="pt")
         outputs = self.model.generate(**inputs, **gen_p)
-
-        log_probs = []
-        chosen_seq = outputs['sequences'][0]
-        # logits = self.model(**inputs, labels=inputs["input_ids"]).logits
-        
-        # print(outputs.logits)
-        # if self.id == "reinforce_agent":
-        #     print(len(outputs.scores))
-        #     print(len(outputs.sequences[0]))
-        #     # 
-        # for i, logits in enumerate(logits):
-        #     probs = log_softmax(logits, dim=-1)  # Get log-softmax over logits
-        #     log_probs.append(probs)
-        # self.log_probs.extend(log_probs)
-        return self.tokenizer.decode(chosen_seq, skip_special_tokens=True)
+        return self.tokenizer.decode(outputs['sequences'][0], skip_special_tokens=True)
     
-    def respond_rl(self, text, starter):
+    def respond_forward_pass(self, text, starter):
+        # USE THE MODEL ITSELF INSTEAD OF model.generate, the issue is that the model is not being updated by the optimizer
+
         if debug:
             print(text)
-        # print("\nSTUCK HERE\n")
         inputs = self.tokenizer(["Continue writing the following text.\n\n" + self.priorities + text], return_tensors="pt")
         
         # Initialize variables for storing generated sequence and logits
@@ -72,13 +60,9 @@ class FlanAgent:
         actions = []
 
         for _ in range(generation_params["max_new_tokens"]):
-            # Perform a forward pass
             outputs = self.model(input_ids=generated_sequence, decoder_input_ids=decoder_input_ids, return_dict=True)
-            
-            # Get the logits for the last token in the sequence
+
             next_token_logits = outputs.logits[:, -1, :]
-            
-            # Apply sampling or greedy decoding to get the next token
             next_token_id = torch.argmax(next_token_logits, dim=-1)
             
             log_prob = log_softmax(next_token_logits, dim=-1)
@@ -87,12 +71,8 @@ class FlanAgent:
             actions.append(next_token_id)
 
 
-            # Append the next token to the decoder input IDs
             decoder_input_ids = torch.cat([decoder_input_ids, next_token_id.unsqueeze(0)], dim=-1)
 
-            # Optionally, update past_key_values for faster generation
-
-            # Break if the model generates the end-of-sequence token
             if next_token_id.item() == self.tokenizer.eos_token_id:
                 break
         
@@ -115,7 +95,6 @@ class Dialog:
     def __init__(self, agent1, agent2, args):
         self.agents = [agent1, agent2]
         self.dialog_history = []
-        self.num_rounds = args.num_rounds
         self.args = args
 
     def selfplay(self):
@@ -123,7 +102,7 @@ class Dialog:
         flag = False
         return_val = None 
         starter = True
-        for a in range(self.num_rounds):
+        for a in range(self.args.num_rounds):
             for agent in self.agents:
                 prev_convo = self.dialog_history[-4:]
                 convo_str = ""
@@ -133,9 +112,9 @@ class Dialog:
                         convo_str += f"{you_or_them}: {list(i.values())[0]} "
                 convo_str += "YOU: "
                 if agent.id == "reinforce_agent":
-                    response = agent.respond_rl(convo_str, starter)
+                    response = agent.respond_forward_pass(convo_str, starter)
                 else:
-                    response = agent.respond(convo_str, starter) 
+                    response = agent.respond_generate(convo_str, starter) 
                 self.dialog_history.append({agent.id:response})
                 starter = False
                 if "Accept-Deal" in list(self.dialog_history[-1].values())[0]:
@@ -165,8 +144,8 @@ class Reinforcer:
     def get_reward(dialog, our_agent, partner_agent, utility):
         try:
             if dialog is None or dialog == "Walk-Away":
-                logging.debug("REWARD 0")
-                return 0
+                logging.debug("Walkaway reward 12")
+                return 12
             item_value = {2: 5, 1: 4, 0: 3}
             if dialog != "Walk-Away":
                 final_offers = dialog[-2:]
@@ -205,7 +184,7 @@ class Reinforcer:
     def reinforce_loop(args):
         reinforce_agent = FlanAgent("reinforce_agent", args.model_dir)
         partner_agent = FlanAgent("partner_agent", args.model_dir)
-        optimizer = torch.optim.SGD(reinforce_agent.model.parameters(), lr=1e-4, momentum=0.9)
+        optimizer = torch.optim.AdamW(reinforce_agent.model.parameters(), lr=1e-4)#, momentum=0.9)
         epoch_reward = []
         logging.basicConfig(filename=args.log_file, level=logging.INFO if args.logging_level == "INFO" else logging.DEBUG)
         epoch_tqdm = tqdm(range(args.num_epochs), desc="Epochs")
@@ -219,57 +198,38 @@ class Reinforcer:
             
             for prio, partner_prio in POSSIBLE_PRIORITIES:
                 # initial_params = {name: param.clone() for name, param in reinforce_agent.model.named_parameters()}
-                batch_probs = [0] * args.batch_size
-                batch_rewards = []
+
                 optimizer.zero_grad()
-                for _ in range(args.batch_size):
-                    
-                    # out = reinforce_agent.model(reinforce_agent.tokenizer(["Continue writing the following text.\n\n" + reinforce_agent.priorities + "YOU: "], return_tensors="pt"))
-                    
-                    reinforce_agent.initialize(prio)
-                    partner_agent.initialize(partner_prio)
-                    dialog = Dialog(reinforce_agent, partner_agent, args)
+                                    
+                reinforce_agent.initialize(prio)
+                partner_agent.initialize(partner_prio)
+                dialog = Dialog(reinforce_agent, partner_agent, args)
 
-                    # USE THE MODEL ITSELF INSTEAD OF model.generate, I THINK?>???????? the issue is that the model is not being updated by the optimizer
-                    selfplay_result = dialog.selfplay()
+                selfplay_result = dialog.selfplay()
 
-                    reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
-                    if reward is None:
-                        continue
+                reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
+                if reward is not None:
                     
                     epoch_rewards += reward
-                    # Ensure log_probs tensor requires grad
                     
-                    batch_rewards.append(reward)
-                    batch_probs[_] = reinforce_agent.log_probs
-                    # Compute the loss
-                    
-
-                    # total_loss += loss.item()
-
-                    # Accumulate gradients
-                    
-                    
-
-
-                
-                    # 
-                loss = 0
-                for reward, batch_probs in zip(batch_rewards, batch_probs):
-                    for log_prob in batch_probs:
+                    loss = 0
+                    reward = reward/36#normalize against max reward of 36
+                    for log_prob in reinforce_agent.log_probs:
                         loss += -log_prob * reward
-                
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-                optimizer.step()
-                # for name, param in reinforce_agent.model.named_parameters():
-                #     if not torch.equal(initial_params[name], param):
-                #         print(f"Model Updated")
-                #         logging.debug(f"Model Updated")
-                #         break
-                        
 
-                
+                    if loss != 0:
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                        optimizer.step()
+                    
+                    # for name, param in reinforce_agent.model.named_parameters():
+                    #     if not torch.equal(initial_params[name], param):
+                    #         print(f"Model Updated")
+                    #         logging.debug(f"Model Updated")
+                    #         break
+                    # logging.info(f"Avg Reward: {avg_reward:.4f}")
+
+                    
                 prio_tqdm.update(1)
                 
 
@@ -286,15 +246,14 @@ class Reinforcer:
             temp.print_dialog()
 
         reinforce_agent.model.save_pretrained("rl_trained", from_pt=True)
-        epoch_tqdm.reset()
 
         prio_tqdm.close()
         epoch_tqdm.close()
 
 
 arg_parser = argparse.ArgumentParser()
-arg_parser.add_argument("--num_epochs", type=int, default=10)
-arg_parser.add_argument("--batch_size", type=int, default=4)
+arg_parser.add_argument("--num_epochs", type=int, default=30)
+# arg_parser.add_argument("--batch_size", type=int, default=4)
 arg_parser.add_argument("--debug", action="store_true")
 arg_parser.add_argument("--model_dir", type=str, default="flan_t5-small-casino/checkpoint-14120")
 arg_parser.add_argument("--output_dir", type=str, default="rl_trained")
@@ -306,5 +265,6 @@ parsed_args = arg_parser.parse_args()
 
 
 
-
+with open(parsed_args.log_file, "w") as f:
+    f.write("")
 Reinforcer.reinforce_loop(parsed_args)
