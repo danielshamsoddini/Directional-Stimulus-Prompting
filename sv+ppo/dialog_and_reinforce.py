@@ -18,14 +18,8 @@ opponent_generation_params = {
     "return_dict_in_generate": True,
     "output_logits": True
 }
-generation_params = {
-    "max_new_tokens": 100,
-    "return_dict_in_generate": True,
-    "output_scores": True,
-    "output_logits": True
-}
-POSSIBLE_PRIORITIES = list(itertools.permutations(["Low", "Medium", "High"], 3))
-POSSIBLE_PRIORITIES = list(itertools.product(POSSIBLE_PRIORITIES, repeat=2))
+
+POSSIBLE_PRIORITIES = list(itertools.product(list(itertools.permutations(["Low", "Medium", "High"], 3)), repeat=2))
 
 debug = False
 
@@ -41,9 +35,8 @@ class FlanAgent:
     def respond_generate(self, text, starter):
         if debug:
             print(text)
-        gen_p = generation_params if self.id == "reinforce_agent" else opponent_generation_params
         inputs = self.tokenizer(["Continue writing the following text.\n\n" + self.priorities + text], return_tensors="pt")
-        outputs = self.model.generate(**inputs, **gen_p)
+        outputs = self.model.generate(**inputs, **opponent_generation_params)
         return self.tokenizer.decode(outputs['sequences'][0], skip_special_tokens=True)
     
     def respond_forward_pass(self, text, starter):
@@ -59,7 +52,7 @@ class FlanAgent:
         log_probs = []
         actions = []
 
-        for _ in range(generation_params["max_new_tokens"]):
+        for _ in range(opponent_generation_params["max_new_tokens"]):
             outputs = self.model(input_ids=generated_sequence, decoder_input_ids=decoder_input_ids, return_dict=True)
 
             next_token_logits = outputs.logits[:, -1, :]
@@ -184,13 +177,14 @@ class Reinforcer:
     def reinforce_loop(args):
         reinforce_agent = FlanAgent("reinforce_agent", args.model_dir)
         partner_agent = FlanAgent("partner_agent", args.model_dir)
-        optimizer = torch.optim.AdamW(reinforce_agent.model.parameters(), lr=1e-4)#, momentum=0.9)
+        optimizer = torch.optim.Adam(reinforce_agent.model.parameters(), lr=1e-4)#, momentum=0.9)
         epoch_reward = []
         logging.basicConfig(filename=args.log_file, level=logging.INFO if args.logging_level == "INFO" else logging.DEBUG)
         epoch_tqdm = tqdm(range(args.num_epochs), desc="Epochs")
         prio_tqdm = tqdm(POSSIBLE_PRIORITIES, desc="Priorities")
 
         reinforce_agent.model.train()
+
         for epoch in range(args.num_epochs):
             logging.info(f"Epoch {epoch + 1}/{args.num_epochs}")            
             total_loss = 0
@@ -198,44 +192,43 @@ class Reinforcer:
             
             for prio, partner_prio in POSSIBLE_PRIORITIES:
                 # initial_params = {name: param.clone() for name, param in reinforce_agent.model.named_parameters()}
-
+                batch_info = []
                 optimizer.zero_grad()
-                                    
-                reinforce_agent.initialize(prio)
-                partner_agent.initialize(partner_prio)
-                dialog = Dialog(reinforce_agent, partner_agent, args)
+                for _ in range(args.batch_size):              
+                    reinforce_agent.initialize(prio)
+                    partner_agent.initialize(partner_prio)
+                    dialog = Dialog(reinforce_agent, partner_agent, args)
 
-                selfplay_result = dialog.selfplay()
+                    selfplay_result = dialog.selfplay()
 
-                reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
-                if reward is not None:
-                    
-                    epoch_rewards += reward
-                    
-                    loss = 0
-                    reward = reward/36#normalize against max reward of 36
-                    for log_prob in reinforce_agent.log_probs:
+                    reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
+                    if reward is not None:
+                        
+                        epoch_rewards += reward
+                        
+                        
+                        reward = reward/36#normalize against max reward of 36
+                        batch_info.append((reinforce_agent.log_probs, reward))
+
+                loss = 0
+                for log_probs, reward in batch_info:
+                    for log_prob in log_probs:
                         loss += -log_prob * reward
 
-                    if loss != 0:
-                        loss.backward()
-                        torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-                        optimizer.step()
+                if loss != 0:
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                    optimizer.step()
                     
-                    # for name, param in reinforce_agent.model.named_parameters():
-                    #     if not torch.equal(initial_params[name], param):
-                    #         print(f"Model Updated")
-                    #         logging.debug(f"Model Updated")
-                    #         break
-                    # logging.info(f"Avg Reward: {avg_reward:.4f}")
 
                     
                 prio_tqdm.update(1)
                 
 
-            avg_loss = total_loss / (len(POSSIBLE_PRIORITIES) ** 2 * args.batch_size)
+            avg_loss = total_loss / (len(POSSIBLE_PRIORITIES) ** 2)
             logging.info(f"Avg Loss: {avg_loss:.4f}")
-            logging.info(f"Avg Reward: {epoch_rewards / (len(POSSIBLE_PRIORITIES) ** 2 * args.batch_size):.4f}")
+            logging.info(f"Total Reward: {epoch_rewards}")
+            logging.info(f"Avg Reward: {epoch_rewards / (len(POSSIBLE_PRIORITIES) ** 2):.4f}")
 
             prio_tqdm.reset()
             epoch_tqdm.update(1)
@@ -253,7 +246,7 @@ class Reinforcer:
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("--num_epochs", type=int, default=30)
-# arg_parser.add_argument("--batch_size", type=int, default=4)
+arg_parser.add_argument("--batch_size", type=int, default=2)
 arg_parser.add_argument("--debug", action="store_true")
 arg_parser.add_argument("--model_dir", type=str, default="flan_t5-small-casino/checkpoint-14120")
 arg_parser.add_argument("--output_dir", type=str, default="rl_trained")
