@@ -211,6 +211,7 @@ class Reinforcer:
             for prio, partner_prio in POSSIBLE_PRIORITIES:
                 # initial_params = {name: param.clone() for name, param in reinforce_agent.model.named_parameters()}
                 batch_info = []
+                batch_reward = 0
                 optimizer.zero_grad()
                 for _ in range(args.batch_size):              
                     reinforce_agent.initialize(prio)
@@ -222,7 +223,7 @@ class Reinforcer:
                     reward = Reinforcer.get_reward(selfplay_result, reinforce_agent, partner_agent, args.utility)
                     if reward is not None:
                         
-                        epoch_rewards += reward
+                        batch_reward += reward
                         
                         
                         reward = reward/36.00 # normalize against max reward of 36
@@ -239,14 +240,15 @@ class Reinforcer:
                     optimizer.step()
                     
 
-                    
+                epoch_rewards += batch_reward/float(args.batch_size)
+                logging.info(f"Reward: {batch_reward/float(args.batch_size)}")
                 prio_tqdm.update(1)
                 
 
             avg_loss = total_loss / (len(POSSIBLE_PRIORITIES) ** 2)
             logging.info(f"Avg Loss: {avg_loss:.4f}")
             logging.info(f"Total Reward: {epoch_rewards}")
-            logging.info(f"Avg Reward: {epoch_rewards / (len(POSSIBLE_PRIORITIES) ** 2):.4f}")
+            logging.info(f"Avg Reward: {epoch_rewards /(36.0)}")
 
             prio_tqdm.reset()
             epoch_tqdm.update(1)
@@ -263,7 +265,7 @@ class Reinforcer:
 
 
 arg_parser = argparse.ArgumentParser()
-arg_parser.add_argument("--num_epochs", type=int, default=30)
+arg_parser.add_argument("--num_epochs", type=int, default=15)
 arg_parser.add_argument("--batch_size", type=int, default=4)
 arg_parser.add_argument("--debug", action="store_true")
 arg_parser.add_argument("--model_dir", type=str, default="flan_t5-small-casino/checkpoint-14120")
