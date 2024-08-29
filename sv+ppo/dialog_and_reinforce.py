@@ -51,9 +51,8 @@ class FlanAgent:
         decoder_input_ids = torch.tensor([[self.tokenizer.pad_token_id]], device=generated_sequence.device)  # Start with the PAD token
         log_probs = []
         actions = []
-        attention_mask = inputs["attention_mask"]
         for _ in range(opponent_generation_params["max_new_tokens"]):
-            outputs = self.model(input_ids=generated_sequence, decoder_input_ids=decoder_input_ids, return_dict=True, attention_mask=attention_mask)
+            outputs = self.model(input_ids=generated_sequence, decoder_input_ids=decoder_input_ids, return_dict=True)
 
             next_token_logits = outputs.logits[:, -1, :]
             next_token_id = torch.argmax(next_token_logits, dim=-1)
