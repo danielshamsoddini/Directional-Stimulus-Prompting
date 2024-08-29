@@ -51,9 +51,9 @@ class FlanAgent:
         decoder_input_ids = torch.tensor([[self.tokenizer.pad_token_id]], device=generated_sequence.device)  # Start with the PAD token
         log_probs = []
         actions = []
-
+        attention_mask = inputs["attention_mask"]
         for _ in range(opponent_generation_params["max_new_tokens"]):
-            outputs = self.model(input_ids=generated_sequence, decoder_input_ids=decoder_input_ids, return_dict=True)
+            outputs = self.model(input_ids=generated_sequence, decoder_input_ids=decoder_input_ids, return_dict=True, attention_mask=attention_mask)
 
             next_token_logits = outputs.logits[:, -1, :]
             next_token_id = torch.argmax(next_token_logits, dim=-1)
@@ -177,11 +177,30 @@ class Reinforcer:
     def reinforce_loop(args):
         reinforce_agent = FlanAgent("reinforce_agent", args.model_dir)
         partner_agent = FlanAgent("partner_agent", args.model_dir)
+
+
+        for name, param in reinforce_agent.model.named_parameters():
+            if "decoder.block" in name and any(layer in name for layer in [".7", ".6", ".5", ".4"]):
+                param.requires_grad = True
+            elif "lm_head" in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False                   
+
+
+        for name, param in reinforce_agent.model.named_parameters():
+            if param.requires_grad:
+                print(f"Fine-tuning: {name}")
+
         optimizer = torch.optim.Adam(reinforce_agent.model.parameters(), lr=1e-4)#, momentum=0.9)
         epoch_reward = []
         logging.basicConfig(filename=args.log_file, level=logging.INFO if args.logging_level == "INFO" else logging.DEBUG)
         epoch_tqdm = tqdm(range(args.num_epochs), desc="Epochs")
         prio_tqdm = tqdm(POSSIBLE_PRIORITIES, desc="Priorities")
+
+
+
+
 
         reinforce_agent.model.train()
 
@@ -207,7 +226,7 @@ class Reinforcer:
                         epoch_rewards += reward
                         
                         
-                        reward = reward/36#normalize against max reward of 36
+                        reward = reward/36.00 # normalize against max reward of 36
                         batch_info.append((reinforce_agent.log_probs, reward))
 
                 loss = 0
