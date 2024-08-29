@@ -137,7 +137,7 @@ class Reinforcer:
         try:
             if dialog is None or dialog == "Walk-Away":
                 logging.debug("Walkaway reward 12")
-                return 12
+                return 18 if utility == "selfish" else 12
             item_value = {2: 5, 1: 4, 0: 3}
             if dialog != "Walk-Away":
                 final_offers = dialog[-2:]
