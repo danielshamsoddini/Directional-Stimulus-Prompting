@@ -179,7 +179,7 @@ class Reinforcer:
 
 
         for name, param in reinforce_agent.model.named_parameters():
-            if "decoder.block" in name and any(layer in name for layer in [".7", ".6", ".5", ".4"]):
+            if "decoder.block" in name and any(layer in name for layer in [".7", ".6", ".5", ".4", ".3"]):
                 param.requires_grad = True
             elif "lm_head" in name:
                 param.requires_grad = True
@@ -191,7 +191,7 @@ class Reinforcer:
             if param.requires_grad:
                 print(f"Fine-tuning: {name}")
 
-        optimizer = torch.optim.Adam(reinforce_agent.model.parameters(), lr=1e-4)#, momentum=0.9)
+        optimizer = torch.optim.SGD(reinforce_agent.model.parameters(), lr=1e-4, momentum=0.9)
         epoch_reward = []
         logging.basicConfig(filename=args.log_file, level=logging.INFO if args.logging_level == "INFO" else logging.DEBUG)
         epoch_tqdm = tqdm(range(args.num_epochs), desc="Epochs")
@@ -264,7 +264,7 @@ class Reinforcer:
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("--num_epochs", type=int, default=30)
-arg_parser.add_argument("--batch_size", type=int, default=2)
+arg_parser.add_argument("--batch_size", type=int, default=4)
 arg_parser.add_argument("--debug", action="store_true")
 arg_parser.add_argument("--model_dir", type=str, default="flan_t5-small-casino/checkpoint-14120")
 arg_parser.add_argument("--output_dir", type=str, default="rl_trained")
