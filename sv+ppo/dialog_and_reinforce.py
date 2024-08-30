@@ -40,7 +40,7 @@ class FlanAgent:
         return self.tokenizer.decode(outputs['sequences'][0], skip_special_tokens=True)
     
     def respond_forward_pass(self, text, starter):
-        # USE THE MODEL ITSELF INSTEAD OF model.generate, the issue is that the model is not being updated by the optimizer
+        # USE THE MODEL ITSELF INSTEAD OF model.generate, the issue is that the tensors model.generate returns can not be used to update the optimizer
 
         if debug:
             print(text)
@@ -197,12 +197,11 @@ class Reinforcer:
         epoch_tqdm = tqdm(range(args.num_epochs), desc="Epochs")
         prio_tqdm = tqdm(POSSIBLE_PRIORITIES, desc="Priorities")
 
-
+        prio_averages = {}
 
 
 
         reinforce_agent.model.train()
-
         for epoch in range(args.num_epochs):
             logging.info(f"Epoch {epoch + 1}/{args.num_epochs}")            
             total_loss = 0
@@ -230,14 +229,29 @@ class Reinforcer:
                         batch_info.append((reinforce_agent.log_probs, reward))
 
                 loss = 0
-                for log_probs, reward in batch_info:
-                    for log_prob in log_probs:
-                        loss += -log_prob * reward
+                prio_averages[(tuple(prio),tuple(partner_prio))] += (batch_reward/float(args.batch_size)) / float(epoch + 1)                
+                # for log_probs, reward in batch_info:
+                #     for log_prob in log_probs:
+                #         loss += -log_prob * reward
 
-                if loss != 0:
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-                    optimizer.step()
+                # if loss != 0:
+                #     loss.backward()
+                #     torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                #     optimizer.step()
+                #     total_loss += loss.item()
+                for _ in range(args.ppo_epochs):  # Multiple epochs for PPO
+                    for log_probs, reward in batch_info:
+                        loss = 0
+                        advantage = reward - prio_averages[(tuple(prio),tuple(partner_prio))]
+                        for log_prob in log_probs:
+                            ratio = torch.exp(log_prob - log_prob.detach())
+                            surr1 = ratio * advantage
+                            surr2 = torch.clamp(ratio, 1.0 - args.ppo_clip, 1.0 + args.ppo_clip) * advantage
+                            loss += -torch.min(surr1, surr2).mean()
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
+                        optimizer.step()
+                        total_loss += loss.item()
                     
 
                 epoch_rewards += batch_reward/float(args.batch_size)
@@ -245,7 +259,7 @@ class Reinforcer:
                 prio_tqdm.update(1)
                 
 
-            avg_loss = total_loss / (len(POSSIBLE_PRIORITIES) ** 2)
+            avg_loss = total_loss / (args.batch_size * (len(POSSIBLE_PRIORITIES) ** 2))
             logging.info(f"Avg Loss: {avg_loss:.4f}")
             logging.info(f"Total Reward: {epoch_rewards}")
             logging.info(f"Avg Reward: {epoch_rewards /(36.0)}")
@@ -274,10 +288,10 @@ arg_parser.add_argument("--num_rounds", type=int, default=10)
 arg_parser.add_argument("--utility", type=str, default="selfish")
 arg_parser.add_argument("--logging_level", type=str, default="INFO")
 arg_parser.add_argument("--log_file", type=str, default="reinforce.log")
+arg_parser.add_argument("--ppo_epochs", type=int, default=4)
+arg_parser.add_argument("--ppo_clip", type=float, default=0.2)
 parsed_args = arg_parser.parse_args()
 
 
 
-with open(parsed_args.log_file, "w") as f:
-    f.write("")
 Reinforcer.reinforce_loop(parsed_args)
