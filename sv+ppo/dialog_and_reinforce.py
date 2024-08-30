@@ -239,7 +239,10 @@ class Reinforcer:
                 for log_probs, reward in batch_info:
                     advantage = reward - prio_averages[(tuple(prio),tuple(partner_prio))]
                     for log_prob in log_probs:
-                        loss += -log_prob * advantage
+                        ratio = torch.exp(log_prob)
+                        surr1 = ratio * advantage
+                        surr2 = torch.clamp(ratio, 1.0 - args.ppo_clip, 1.0 + args.ppo_clip) * advantage
+                        loss += -torch.min(surr1, surr2).mean()
 
                 if loss != 0:
                     loss.backward()

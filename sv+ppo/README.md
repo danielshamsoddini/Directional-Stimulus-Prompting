@@ -4,7 +4,7 @@ Training:
     python basic_train.py
 
 PPO:
-    python dialog_and_reinforce.py
+    python dialog_and_reinforce.py, the default arguments are what I have been using
 
 
 Current Issues:
@@ -22,3 +22,6 @@ Over time in RLtraining, the model just ends up repeating text
     INFO:root:{'partner_agent': 'I would appreciate a bit more food. We can make a deal, though.'}
     INFO:root:{'reinforce_agent': "I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I"}
     INFO:root:{'partner_agent': 'I would appreciate 2 of the extra food. But I will be camping with my family.'}
+
+The agent still seems too eager to agree to the partner
+
