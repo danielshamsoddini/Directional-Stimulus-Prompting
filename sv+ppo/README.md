@@ -23,5 +23,5 @@ Over time in RLtraining, the model just ends up repeating text
     INFO:root:{'reinforce_agent': "I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I'm going to be camping with my family. I"}
     INFO:root:{'partner_agent': 'I would appreciate 2 of the extra food. But I will be camping with my family.'}
 
-The agent still seems too eager to agree to the partner
+The selfish agent still seems too eager to agree to the partner, I have tried to fix this by increasing the walk-away reward
 

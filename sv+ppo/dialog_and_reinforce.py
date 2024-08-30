@@ -250,28 +250,9 @@ class Reinforcer:
                     optimizer.step()
                     optimizer.zero_grad()
                     total_loss += loss.item()
-                # for _ in range(args.ppo_epochs):  # Multiple epochs for PPO
-                #     for log_probs, reward in batch_info:
-                #         optimizer.zero_grad()
-                #         loss = 0
-                #         advantage = reward - prio_averages[(tuple(prio),tuple(partner_prio))]
-                #         for log_prob in log_probs:
-                #             log_prob = log_prob.detach()  # Detach to avoid in-place modification issues
-                #             ratio = torch.exp(log_prob - log_prob.detach())
-                #             surr1 = ratio * advantage
-                #             surr2 = torch.clamp(ratio, 1.0 - args.ppo_clip, 1.0 + args.ppo_clip) * advantage
-                #             loss = loss + (-torch.min(surr1, surr2).mean())
-                #         if loss != 0:
-                #             loss.backward(retain_graph=True)  # Prevent in-place operation issues
-                #             torch.nn.utils.clip_grad_norm_(reinforce_agent.model.parameters(), 1.0)
-                #             optimizer.step()
-                #             optimizer.zero_grad()  # Clear gradients after the step
-                #             total_loss += loss.item()
-                #         else:
-                #             logging.warning("Loss is 0, skipping step")
+                else:
+                    logging.warning("Loss is 0, skipping step")
                 
-                    
-
                 epoch_rewards += batch_reward/float(args.batch_size)
                 logging.info(f"Reward: {batch_reward/float(args.batch_size)}")
                 prio_tqdm.update(1)
